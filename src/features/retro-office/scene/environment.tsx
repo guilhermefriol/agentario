@@ -665,15 +665,16 @@ export const WallPictures = memo(function WallPictures({
   const westX = localCenterX - localWidth / 2 + 0.07;
   const eastX = localCenterX + localWidth / 2 - 0.07;
   const pictureY = 0.64;
-  const [localFlagPoleX, , localFlagPoleZ] = toWorld(
-    180,
-    LOCAL_OFFICE_CANVAS_HEIGHT - 110,
-  );
+  // Bandeiras do lado de fora da porta da sala dos servidores (porta em x=220, y 620–660):
+  // para quem está de frente para a porta, a Rússia fica à direita e o Brasil à esquerda.
+  const [localFlagPoleX, , localFlagPoleZ] = toWorld(255, 600);
+  const [brazilFlagPoleX, , brazilFlagPoleZ] = toWorld(255, 685);
   const [remoteFlagPoleX, , remoteFlagPoleZ] = toWorld(
     180,
     REMOTE_OFFICE_ZONE.maxY - 110,
   );
   const localFlagPolePosition: [number, number, number] = [localFlagPoleX, 0, localFlagPoleZ];
+  const brazilFlagPolePosition: [number, number, number] = [brazilFlagPoleX, 0, brazilFlagPoleZ];
   const remoteFlagPolePosition: [number, number, number] = [
     remoteFlagPoleX,
     0,
@@ -686,6 +687,11 @@ export const WallPictures = memo(function WallPictures({
         position={localFlagPolePosition}
         rotY={0.32}
         art={<RussiaFlagArt />}
+      />
+      <OfficeFlagPole
+        position={brazilFlagPolePosition}
+        rotY={0.32}
+        art={<BrazilFlagArt />}
       />
       {showRemoteOffice ? (
         <OfficeFlagPole
