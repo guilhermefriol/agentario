@@ -1,0 +1,16 @@
+#!/bin/sh
+# Agentário: bloqueia segredos e o config local antes de qualquer commit.
+set -e
+
+if ! command -v gitleaks >/dev/null 2>&1; then
+  echo "pre-commit: gitleaks não encontrado (brew install gitleaks)." >&2
+  exit 1
+fi
+
+# Config local com nomes reais de projetos nunca entra no git.
+if git diff --cached --name-only | grep -E '(^|/)agentario\.config\.local\.json$|(^|/)\.agentario/' >/dev/null; then
+  echo "pre-commit: config local (agentario.config.local.json / .agentario/) não pode ser commitado." >&2
+  exit 1
+fi
+
+gitleaks git --staged --redact --no-banner --config .gitleaks.toml

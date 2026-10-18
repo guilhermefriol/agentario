@@ -1,0 +1,9 @@
+title = "agentario"
+
+[extend]
+useDefault = true
+
+[[rules]]
+id = "agentario-local-config"
+description = "Conteúdo do config local do Agentário (lista real de projetos)"
+regex = '''"agentarioLocal"\s*:\s*true'''

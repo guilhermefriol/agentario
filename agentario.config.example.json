@@ -1,0 +1,13 @@
+{
+  "$comment": "Copie para agentario.config.local.json (ignorado pelo git) e ajuste. Nomes abaixo são fictícios.",
+  "agentarioLocal": false,
+  "claudeDir": "~/.claude",
+  "activeWindowSeconds": 120,
+  "showRealNames": true,
+  "showTasks": true,
+  "night": { "enabled": true, "from": "22:00", "to": "07:00" },
+  "projects": {
+    "projeto-exemplo": { "label": "Projeto Exemplo", "hidden": false, "hideTasks": false },
+    "outro-projeto": { "label": "Outro Projeto", "hidden": true }
+  }
+}
