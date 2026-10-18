@@ -60,7 +60,7 @@ function FramedPicture({
   );
 }
 
-function RussiaFlagArt() {
+export function RussiaFlagArt() {
   const flagWidth = 0.52;
   const flagHeight = 0.3;
   const stripeHeight = flagHeight / 3;
@@ -81,7 +81,7 @@ function RussiaFlagArt() {
   );
 }
 
-function BrazilFlagArt() {
+export function BrazilFlagArt() {
   return (
     <>
       <mesh position={[0, 0, 0]}>
@@ -104,7 +104,7 @@ function BrazilFlagArt() {
   );
 }
 
-function OfficeFlagPole({
+export function OfficeFlagPole({
   position,
   rotY = 0,
   art,

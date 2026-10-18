@@ -150,6 +150,7 @@ import {
   saveFurniture,
 } from "@/features/retro-office/core/persistence";
 import type {
+  AgentDirectedTarget,
   FurnitureItem,
   JanitorActor,
   OfficeAgent,
@@ -848,6 +849,78 @@ function AdaptiveDprController() {
 // `useAgentTick()` is the scene-side consumer of derived office state. Upstream modules decide
 // which room an agent should prefer; this hook turns those holds plus authored furniture into
 // concrete targets, paths, and per-frame actor motion.
+/**
+ * Modo dirigido (Agentário): o alvo de cada agente vem de fora. Trocar de alvo zera
+ * interação, academia, ping-pong e caminho anteriores e replaneja pelo A*.
+ */
+function buildDirectedRenderAgent(
+  agent: OfficeAgent,
+  existing: RenderAgent | undefined,
+  target: AgentDirectedTarget | null,
+  planPath: (fx: number, fy: number, tx: number, ty: number) => { x: number; y: number }[],
+  pickSpawnPoint: (agentId: string) => { x: number; y: number },
+): RenderAgent {
+  const pose = target?.pose ?? "stand";
+  const reset = {
+    directed: true,
+    directedPose: pose,
+    directedFacing: target?.facing,
+    workoutStyle: pose === "workout" ? (target?.workoutStyle ?? "lift") : undefined,
+    interactionTarget: undefined,
+    gymStage: undefined,
+    qaLabStage: undefined,
+    qaLabStationType: undefined,
+    smsBoothStage: undefined,
+    phoneBoothStage: undefined,
+    serverRoomStage: undefined,
+    pingPongUntil: undefined,
+    pingPongTargetX: undefined,
+    pingPongTargetY: undefined,
+    pingPongFacing: undefined,
+    pingPongPartnerId: undefined,
+    pingPongTableUid: undefined,
+    pingPongSide: undefined,
+    pingPongPreviousWalkSpeed: undefined,
+  };
+  if (existing) {
+    const tx = target?.x ?? existing.targetX;
+    const ty = target?.y ?? existing.targetY;
+    const changed =
+      !existing.directed ||
+      existing.targetX !== tx ||
+      existing.targetY !== ty ||
+      existing.directedPose !== pose;
+    const walkSpeed = existing.pingPongPreviousWalkSpeed ?? existing.walkSpeed;
+    const base = { ...existing, ...agent, ...reset, walkSpeed } as RenderAgent;
+    if (!changed) return base;
+    return {
+      ...base,
+      targetX: tx,
+      targetY: ty,
+      path: planPath(existing.x, existing.y, tx, ty),
+      state: "walking",
+    } as RenderAgent;
+  }
+  const spawn = target?.spawnFrom ?? (target ? { x: target.x, y: target.y } : pickSpawnPoint(agent.id));
+  const tx = target?.x ?? spawn.x;
+  const ty = target?.y ?? spawn.y;
+  const atTarget = spawn.x === tx && spawn.y === ty;
+  return {
+    ...agent,
+    ...reset,
+    x: spawn.x,
+    y: spawn.y,
+    targetX: tx,
+    targetY: ty,
+    path: atTarget ? [] : planPath(spawn.x, spawn.y, tx, ty),
+    frame: 0,
+    walkSpeed: WALK_SPEED * (0.85 + Math.random() * 0.3),
+    phaseOffset: Math.random() * Math.PI * 2,
+    state: atTarget ? "standing" : "walking",
+    facing: target?.facing ?? 0,
+  } as RenderAgent;
+}
+
 function useAgentTick(
   agents: SceneActor[],
   deskLocations: { x: number; y: number }[],
@@ -870,6 +943,7 @@ function useAgentTick(
   qaHoldByAgentId: Record<string, boolean> = {},
   githubReviewByAgentId: Record<string, boolean> = {},
   standupMeeting: StandupMeeting | null = null,
+  targetByAgentId: Record<string, AgentDirectedTarget> | null = null,
 ) {
   const renderAgentsRef = useRef<RenderAgent[]>([]);
   const renderAgentLookupRef = useRef<Map<string, RenderAgent>>(new Map());
@@ -989,6 +1063,18 @@ function useAgentTick(
           facing: spawn.facing,
           janitorRouteIndex: initialRouteIndex,
         } as RenderAgent);
+        return;
+      }
+      if (targetByAgentId) {
+        next.push(
+          buildDirectedRenderAgent(
+            agent as OfficeAgent,
+            existing,
+            targetByAgentId[agent.id] ?? null,
+            planPath,
+            pickSpawnPoint,
+          ),
+        );
         return;
       }
       const assignedDeskIndex = assignedDeskIndexByAgentId[agent.id];
@@ -1725,6 +1811,7 @@ function useAgentTick(
       renderAgentLookup.set(agent.id, agent);
     }
   }, [
+    targetByAgentId,
     agents,
     assignedDeskIndexByAgentId,
     deskHoldByAgentId,
@@ -1891,6 +1978,23 @@ function useAgentTick(
                 routeIndex < agent.janitorRoute.length - 1
                   ? now + agent.janitorPauseMs
                   : undefined,
+              frame: agent.frame + 1,
+            };
+          }
+          if (agent.directed) {
+            const pose = agent.directedPose ?? "stand";
+            return {
+              ...agent,
+              x: nx,
+              y: ny,
+              path: [],
+              facing: agent.directedFacing ?? nf,
+              state:
+                pose === "sit"
+                  ? ("sitting" as const)
+                  : pose === "workout"
+                    ? ("working_out" as const)
+                    : ("standing" as const),
               frame: agent.frame + 1,
             };
           }
@@ -2246,6 +2350,10 @@ export function RetroOffice3D({
   officeCenterSignal = 0,
   animationState = null,
   readOnly = false,
+  furniture: externalFurniture,
+  targetByAgentId,
+  cameraOverride,
+  customEnvironment,
   storageNamespace = "default",
   layoutPreset = "office",
   deskAssignmentByDeskUid = EMPTY_STRING_RECORD,
@@ -2360,6 +2468,14 @@ export function RetroOffice3D({
     | "jukeboxHoldByAgentId"
   > | null;
   readOnly?: boolean;
+  /** Layout gerado por fora: sem localStorage, sem injetores e sem gravação. */
+  furniture?: FurnitureItem[];
+  /** Modo dirigido: alvo explícito por agente (desliga holds e passeio aleatório). */
+  targetByAgentId?: Record<string, AgentDirectedTarget>;
+  /** Enquadramento da câmera (alvo em px do canvas e zoom ortográfico). */
+  cameraOverride?: { x: number; y: number; zoom: number };
+  /** Substitui piso, paredes e quadros do escritório fixo. Renderizado dentro do Canvas. */
+  customEnvironment?: React.ReactNode;
   storageNamespace?: string;
   layoutPreset?: OfficeLayoutPreset;
   deskAssignmentByDeskUid?: Record<string, string>;
@@ -2502,10 +2618,15 @@ export function RetroOffice3D({
   );
 
   const [furniture, setFurniture] = useState<FurnitureItem[]>(() =>
+    externalFurniture ??
     buildInitialFurnitureLayout(storageNamespace, layoutPreset).filter(
       (item) => !isRetiredPingPongLamp(item),
     ),
   );
+  const usesExternalFurniture = externalFurniture !== undefined;
+  useEffect(() => {
+    if (externalFurniture) setFurniture(externalFurniture);
+  }, [externalFurniture]);
   const defaultRemoteLayoutFurniture = useMemo(
     () =>
       remoteOfficeEnabled
@@ -2531,18 +2652,20 @@ export function RetroOffice3D({
     [defaultRemoteLayoutFurniture, remoteLayoutSnapshot, remoteOfficeEnabled],
   );
   useEffect(() => {
-    setFurniture(
-      buildInitialFurnitureLayout(storageNamespace, layoutPreset).filter(
-        (item) => !isRetiredPingPongLamp(item),
-      ),
-    );
+    if (!usesExternalFurniture) {
+      setFurniture(
+        buildInitialFurnitureLayout(storageNamespace, layoutPreset).filter(
+          (item) => !isRetiredPingPongLamp(item),
+        ),
+      );
+    }
     setSelectedUid(null);
     setDeskActionUid(null);
     setDeskAssignPickerOpen(false);
     setDrag({ kind: "idle" });
     setGhostPos(null);
     setWallDrawStart(null);
-  }, [layoutPreset, storageNamespace]);
+  }, [layoutPreset, storageNamespace, usesExternalFurniture]);
   const [editMode, setEditMode] = useState(false);
   const [selectedUid, setSelectedUid] = useState<string | null>(null);
   const [hoverUid, setHoverUid] = useState<string | null>(null);
@@ -2610,10 +2733,14 @@ export function RetroOffice3D({
     target: [number, number, number];
     zoom?: number;
   } | null>(null);
+  const cameraOverrideX = cameraOverride?.x;
+  const cameraOverrideY = cameraOverride?.y;
   const LOCAL_CAMERA_TARGET = useMemo(
     () =>
-      toWorld(LOCAL_OFFICE_CANVAS_WIDTH / 2, LOCAL_OFFICE_CANVAS_HEIGHT / 2),
-    [],
+      cameraOverrideX !== undefined && cameraOverrideY !== undefined
+        ? toWorld(cameraOverrideX, cameraOverrideY)
+        : toWorld(LOCAL_OFFICE_CANVAS_WIDTH / 2, LOCAL_OFFICE_CANVAS_HEIGHT / 2),
+    [cameraOverrideX, cameraOverrideY],
   );
   const CAM_POS = useMemo<[number, number, number]>(() => {
     if (remoteOfficeEnabled) return DISTRICT_CAMERA_POSITION;
@@ -2629,20 +2756,26 @@ export function RetroOffice3D({
   const cameraTarget = remoteOfficeEnabled
     ? DISTRICT_CAMERA_TARGET
     : LOCAL_CAMERA_TARGET;
-  const cameraZoom = remoteOfficeEnabled ? DISTRICT_CAMERA_ZOOM : 56;
+  const cameraZoom = remoteOfficeEnabled
+    ? DISTRICT_CAMERA_ZOOM
+    : (cameraOverride?.zoom ?? 56);
   const overviewPreset = useMemo(
     () => ({ pos: CAM_POS, target: cameraTarget, zoom: cameraZoom }),
     [CAM_POS, cameraTarget, cameraZoom]
   );
   const canvasResetKey = useMemo(
     () =>
-      [
-        remoteOfficeEnabled ? "remote" : "local",
-        gatewayStatus ?? "unknown",
-        String(agents.length),
-        String(officeCenterSignal),
-      ].join(":"),
-    [agents.length, gatewayStatus, officeCenterSignal, remoteOfficeEnabled],
+      // Na TV (câmera enquadrada por fora) só o enquadramento remonta o canvas; pessoas
+      // entrando e saindo não podem piscar a tela.
+      cameraOverride
+        ? ["tv", cameraOverride.x, cameraOverride.y, cameraOverride.zoom.toFixed(2)].join(":")
+        : [
+            remoteOfficeEnabled ? "remote" : "local",
+            gatewayStatus ?? "unknown",
+            String(agents.length),
+            String(officeCenterSignal),
+          ].join(":"),
+    [agents.length, cameraOverride, gatewayStatus, officeCenterSignal, remoteOfficeEnabled],
   );
   // New Idea 7: heatmap mode.
   const [heatmapMode, setHeatmapMode] = useState(false);
@@ -2723,28 +2856,34 @@ export function RetroOffice3D({
   const [qaImmersiveReady, setQaImmersiveReady] = useState(false);
 
   useEffect(() => {
+    if (usesExternalFurniture) return;
     markAtmMigrationApplied(storageNamespace);
-  }, [storageNamespace]);
+  }, [storageNamespace, usesExternalFurniture]);
 
   useEffect(() => {
+    if (usesExternalFurniture) return;
     markPhoneBoothMigrationApplied(storageNamespace);
-  }, [storageNamespace]);
+  }, [storageNamespace, usesExternalFurniture]);
 
   useEffect(() => {
+    if (usesExternalFurniture) return;
     markSmsBoothMigrationApplied(storageNamespace);
-  }, [storageNamespace]);
+  }, [storageNamespace, usesExternalFurniture]);
 
   useEffect(() => {
+    if (usesExternalFurniture) return;
     markServerRoomMigrationApplied(storageNamespace);
-  }, [storageNamespace]);
+  }, [storageNamespace, usesExternalFurniture]);
 
   useEffect(() => {
+    if (usesExternalFurniture) return;
     markGymRoomMigrationApplied(storageNamespace);
-  }, [storageNamespace]);
+  }, [storageNamespace, usesExternalFurniture]);
 
   useEffect(() => {
+    if (usesExternalFurniture) return;
     markQaLabMigrationApplied(storageNamespace);
-  }, [storageNamespace]);
+  }, [storageNamespace, usesExternalFurniture]);
 
   useEffect(() => {
     followAgentIdRef.current = followAgentId;
@@ -2860,6 +2999,7 @@ export function RetroOffice3D({
     resolvedQaHoldByAgentId,
     resolvedGithubReviewByAgentId,
     standupMeeting,
+    targetByAgentId ?? null,
   );
   useEffect(() => {
     const syncRenderAgentUi = () => {
@@ -3145,13 +3285,14 @@ export function RetroOffice3D({
   );
 
   useEffect(() => {
+    if (usesExternalFurniture) return;
     const timeoutId = window.setTimeout(() => {
       saveFurniture(furniture, storageNamespace);
     }, 300);
     return () => {
       window.clearTimeout(timeoutId);
     };
-  }, [furniture, storageNamespace]);
+  }, [furniture, storageNamespace, usesExternalFurniture]);
 
   useEffect(() => {
     if (readOnly || storageNamespace !== "default") return;
@@ -5213,7 +5354,7 @@ export function RetroOffice3D({
               rotateSpeed={0.6}
               zoomSpeed={0.8}
               panSpeed={0.6}
-              minZoom={25}
+              minZoom={Math.min(25, cameraZoom * 0.5)}
               maxZoom={120}
               maxPolarAngle={Math.PI / 2.2}
               enableRotate={!spaceDown}
@@ -5265,10 +5406,14 @@ export function RetroOffice3D({
             />
 
             {/* Floor + walls — always visible, no async loading. */}
-            <SceneFloorAndWalls showRemoteOffice={remoteOfficeEnabled} />
+            {customEnvironment ?? (
+              <SceneFloorAndWalls showRemoteOffice={remoteOfficeEnabled} />
+            )}
 
             {/* Wall pictures — procedural, no async loading. */}
-            <SceneWallPictures showRemoteOffice={remoteOfficeEnabled} />
+            {customEnvironment ? null : (
+              <SceneWallPictures showRemoteOffice={remoteOfficeEnabled} />
+            )}
 
             {/* Environment lighting — async, wrapped in its own Suspense so floor stays visible. */}
             <Suspense fallback={null}>
@@ -6161,7 +6306,7 @@ export function RetroOffice3D({
                     {hoveredAgent.name}
                   </div>
                   <div className="text-[10px] text-amber-600 uppercase tracking-widest">
-                    {hoveredAgent.item}
+                    {("subtitle" in hoveredAgent && hoveredAgent.subtitle) || hoveredAgent.item}
                   </div>
                   {/* New Idea 8: last seen timestamp. */}
                   {(() => {
@@ -7174,15 +7319,15 @@ export function RetroOffice3D({
             {/* Ideas 6 + 8: Gateway status, agent counts, vibe score. */}
             <div className="flex items-center gap-3 bg-black/60 backdrop-blur-sm rounded-full px-3 py-1 text-[10px] font-mono">
               <span className="text-amber-500/60">
-                {agents.filter((a) => a.status === "working").length} working
+                {agents.filter((a) => a.status === "working").length} trabalhando
               </span>
               <span className="opacity-30">·</span>
               <span className="text-amber-500/60">
-                {agents.filter((a) => a.status === "idle").length} idle
+                {agents.filter((a) => a.status === "idle").length} parados
               </span>
               <span className="opacity-30">·</span>
               <span className="text-amber-500/60">
-                {agents.filter((a) => a.status === "error").length} error
+                {agents.filter((a) => a.status === "error").length} com erro
               </span>
               {/* New Idea 6: Vibe score with animated EQ bars. */}
               {(() => {
@@ -7191,7 +7336,7 @@ export function RetroOffice3D({
                 ).length;
                 const ratio = workingCount / Math.max(agents.length, 1);
                 const label =
-                  ratio < 0.2 ? "quiet" : ratio < 0.6 ? "active" : "buzzing";
+                  ratio < 0.2 ? "calmo" : ratio < 0.6 ? "ativo" : "agitado";
                 const animDur = ratio < 0.2 ? "1.8s" : ratio < 0.6 ? "1s" : "0.5s";
                 return (
                   <>
@@ -7219,14 +7364,14 @@ export function RetroOffice3D({
                 <>
                   <span className="opacity-30">·</span>
                   <span className="text-amber-400/40">
-                    drag · scroll · space+drag · dbl-click
+                    arrastar · rolar · espaço+arrastar · duplo clique
                   </span>
                 </>
               )}
               {spaceDown && (
                 <>
                   <span className="opacity-30">·</span>
-                  <span className="text-amber-300/80">pan mode</span>
+                  <span className="text-amber-300/80">modo mover</span>
                 </>
               )}
             </div>

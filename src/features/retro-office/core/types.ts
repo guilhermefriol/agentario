@@ -39,6 +39,10 @@ export type RenderAgent = SceneActor & {
   walkSpeed: number;
   phaseOffset: number;
   state: "walking" | "sitting" | "standing" | "away" | "working_out" | "dancing";
+  /** Modo dirigido (Agentário): o alvo vem de fora e o agente não vagueia. */
+  directed?: boolean;
+  directedPose?: AgentDirectedPose;
+  directedFacing?: number;
   awayUntil?: number;
   separationReplanAt?: number;
   bumpedUntil?: number;
@@ -133,4 +137,18 @@ export type SmsBoothRoute = {
   targetX: number;
   targetY: number;
   facing: number;
+};
+
+export type AgentDirectedPose = "sit" | "stand" | "workout";
+
+/** Alvo explícito de um agente (canvas px). `spawnFrom` faz o agente novo surgir lá e caminhar. */
+export type AgentDirectedTarget = {
+  x: number;
+  y: number;
+  facing?: number;
+  pose: AgentDirectedPose;
+  workoutStyle?: "run" | "lift" | "bike" | "box" | "row" | "stretch";
+  spawnFrom?: { x: number; y: number };
+  /** Andar do alvo (usado só pela tela de andares do Agentário). */
+  floor?: number;
 };
