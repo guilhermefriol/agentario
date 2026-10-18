@@ -5,7 +5,18 @@ Roda localmente no Mac e é exibido numa TV pelo HDMI.
 
 Baseado no [Claw3D](https://github.com/iamlukethedev/Claw3D) (MIT), sem OpenClaw: a fonte de dados é o `~/.claude` local, lido somente em modo leitura.
 
-> **Status:** base importada. O adaptador do Claude Code e a cena customizada estão em desenvolvimento.
+> **Status:** adaptador do Claude Code e tela `/tv` funcionando; salas por projeto, Friol e área de lazer em desenvolvimento.
+
+## Rodando
+
+```sh
+npm install
+npm run tv
+```
+
+Abra `http://localhost:3210/tv` no navegador do Mac (a TV é o monitor HDMI). O comando sobe o adaptador (`127.0.0.1:18790`, somente leitura) e a interface juntos; se um cair, o outro é derrubado. Para usar o build de produção: `npm run build && npm run tv -- --prod`.
+
+O painel só aceita conexões da própria máquina; acesso por rede não é suportado.
 
 ## Ideia
 

@@ -9,6 +9,7 @@ const { createWatcher } = require("./watcher");
 
 const ADAPTER_PORT = parseInt(process.env.AGENTARIO_ADAPTER_PORT || "18790", 10);
 const MAIN_KEY = "main";
+const AGENTARIO_PROTOCOL_VERSION = 1;
 const POLL_MS = 2000;
 const DISCOVER_MS = 10000;
 const MODELS = [{ id: "claude-code", name: "Claude Code", provider: "anthropic" }];
@@ -50,6 +51,14 @@ const agentPayload = (agent, roomsById) => ({
   workspace: agent.projectId ? `sala:${roomsById.get(agent.projectId) ?? ""}` : "centro",
   identity: { name: agent.name, emoji: agent.kind === "fiscal" ? "📋" : "🤖" },
   role: agent.role,
+  // Campos próprios do Agentário: a tela /tv usa estes, não infere por preview.
+  agentario: {
+    kind: agent.kind,
+    status: agent.working ? "working" : "idle",
+    task: agent.task,
+    room: agent.projectId ? roomsById.get(agent.projectId) ?? null : null,
+    verdict: agent.verdict ?? null,
+  },
 });
 
 function recentSessions(snapshot) {
@@ -264,6 +273,7 @@ function startAdapter({ config = loadConfig(), port = ADAPTER_PORT } = {}) {
             type: "hello-ok",
             protocol: 3,
             adapterType: "demo",
+            agentario: { version: AGENTARIO_PROTOCOL_VERSION },
             features: { methods: READ_METHODS, events: ["chat", "presence", "heartbeat"] },
             snapshot: {
               health: {

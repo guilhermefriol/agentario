@@ -237,7 +237,15 @@ describe("adapter", () => {
   it("responde agents.list e sessions.preview no formato do gateway", () => {
     const list = call("agents.list", {}, () => snapshot);
     expect(list.payload).toMatchObject({ defaultId: "friol", mainKey: "main" });
-    expect(list.payload.agents?.[1]).toMatchObject({ id: "s-1", name: "Ana", workspace: "sala:Sala A" });
+    expect(list.payload.agents?.[1]).toMatchObject({
+      id: "s-1",
+      name: "Ana",
+      workspace: "sala:Sala A",
+      agentario: { kind: "session", status: "working", task: "Rodando comando", room: "Sala A" },
+    });
+    expect(list.payload.agents?.[0]).toMatchObject({
+      agentario: { kind: "owner", status: "idle", task: null, room: null },
+    });
     const preview = call("sessions.preview", { keys: ["agent:s-1:main", "agent:friol:main"] }, () => snapshot);
     expect(preview.payload.previews?.map((p) => p.status)).toEqual(["ok", "empty"]);
   });

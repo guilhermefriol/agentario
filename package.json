@@ -19,7 +19,8 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest",
     "e2e": "playwright test",
-    "claude-adapter": "node server/claude-code/adapter.js"
+    "claude-adapter": "node server/claude-code/adapter.js",
+    "tv": "node scripts/tv.mjs"
   },
   "dependencies": {
     "@noble/ed25519": "^3.0.0",
