@@ -18,7 +18,8 @@
     "smoke:dev-server": "node scripts/smoke-dev-server.mjs",
     "typecheck": "tsc --noEmit",
     "test": "vitest",
-    "e2e": "playwright test"
+    "e2e": "playwright test",
+    "claude-adapter": "node server/claude-code/adapter.js"
   },
   "dependencies": {
     "@noble/ed25519": "^3.0.0",
