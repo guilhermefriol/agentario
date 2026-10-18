@@ -3,7 +3,6 @@
 const fs = require("node:fs");
 
 const INITIAL_TAIL_BYTES = 256 * 1024;
-const HEAD_BYTES = 64 * 1024;
 const MAX_READ_PER_POLL = 4 * 1024 * 1024;
 
 const parseLine = (buffer) => {
@@ -86,23 +85,4 @@ function createTailer(filePath, options = {}) {
   return { read, get offset() { return offset; } };
 }
 
-/** Lê o início do arquivo e devolve o primeiro `cwd` encontrado. */
-function readCwdFromHead(filePath) {
-  let chunk;
-  try {
-    chunk = readRange(filePath, 0, HEAD_BYTES);
-  } catch {
-    return null;
-  }
-  let start = 0;
-  let newline = chunk.indexOf(0x0a, start);
-  while (newline !== -1) {
-    const record = parseLine(chunk.subarray(start, newline));
-    if (record && typeof record.cwd === "string" && record.cwd) return record.cwd;
-    start = newline + 1;
-    newline = chunk.indexOf(0x0a, start);
-  }
-  return null;
-}
-
-module.exports = { createTailer, readCwdFromHead };
+module.exports = { createTailer };

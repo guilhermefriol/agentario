@@ -16,8 +16,13 @@ const DEFAULTS = Object.freeze({
   showRealNames: true,
   showTasks: true,
   night: { enabled: false, from: "22:00", to: "07:00" },
+  layout: "acesas",
+  exclude: [],
   projects: {},
 });
+
+const TASK_POLICIES = new Set(["publico", "interno", "oculto"]);
+const LAYOUTS = new Set(["acesas", "baias", "andares"]);
 
 const expandHome = (value) =>
   value === "~" || value.startsWith("~/") ? path.join(os.homedir(), value.slice(1)) : value;
@@ -33,7 +38,9 @@ const normalizeProjects = (raw) => {
     projects[folder] = {
       label: typeof entry.label === "string" && entry.label.trim() ? entry.label.trim() : null,
       hidden: entry.hidden === true,
-      hideTasks: entry.hideTasks === true,
+      // Sem valor → público (tarefas visíveis por padrão); valor inválido → oculto.
+      tasks:
+        entry.tasks === undefined ? "publico" : TASK_POLICIES.has(entry.tasks) ? entry.tasks : "oculto",
     };
   }
   return projects;
@@ -58,6 +65,10 @@ function normalizeConfig(raw) {
       from: typeof night.from === "string" ? night.from : DEFAULTS.night.from,
       to: typeof night.to === "string" ? night.to : DEFAULTS.night.to,
     },
+    layout: LAYOUTS.has(input.layout) ? input.layout : DEFAULTS.layout,
+    exclude: Array.isArray(input.exclude)
+      ? input.exclude.filter((pattern) => typeof pattern === "string" && pattern.trim())
+      : [],
     projects: normalizeProjects(input.projects),
   };
 }

@@ -6,6 +6,7 @@ const { WebSocketServer } = require("ws");
 const { loadConfig } = require("./config");
 const { createState, OWNER_ID } = require("./state");
 const { createWatcher } = require("./watcher");
+const { projectRoots } = require("./rooms");
 
 const ADAPTER_PORT = parseInt(process.env.AGENTARIO_ADAPTER_PORT || "18790", 10);
 const MAIN_KEY = "main";
@@ -31,6 +32,7 @@ const READ_METHODS = [
   "cron.list",
   "agent.wait",
   "wake",
+  "agentario.rooms",
 ];
 
 const randomId = () => randomUUID().replace(/-/g, "");
@@ -48,7 +50,7 @@ function isLocalRequest(headers) {
 const agentPayload = (agent, roomsById) => ({
   id: agent.id,
   name: agent.name,
-  workspace: agent.projectId ? `sala:${roomsById.get(agent.projectId) ?? ""}` : "centro",
+  workspace: agent.roomId ? `sala:${roomsById.get(agent.roomId) ?? ""}` : "centro",
   identity: { name: agent.name, emoji: agent.kind === "fiscal" ? "📋" : "🤖" },
   role: agent.role,
   // Campos próprios do Agentário: a tela /tv usa estes, não infere por preview.
@@ -56,7 +58,8 @@ const agentPayload = (agent, roomsById) => ({
     kind: agent.kind,
     status: agent.working ? "working" : "idle",
     task: agent.task,
-    room: agent.projectId ? roomsById.get(agent.projectId) ?? null : null,
+    roomId: agent.roomId,
+    room: agent.roomId ? roomsById.get(agent.roomId) ?? null : null,
     verdict: agent.verdict ?? null,
   },
 });
@@ -162,6 +165,9 @@ function handleMethod(method, params, id, getSnapshot) {
     case "wake":
       return resOk(id, { ok: true });
 
+    case "agentario.rooms":
+      return resOk(id, { rooms: snapshot.rooms });
+
     default:
       return resErr(id, "read_only", "O Agentário é somente leitura.");
   }
@@ -204,9 +210,9 @@ function diffEvents(previous, next, runIds) {
   }
 
   const membership = (snapshot) =>
-    snapshot.agents.map((agent) => `${agent.id}:${agent.projectId}`).sort().join(",") +
+    snapshot.agents.map((agent) => `${agent.id}:${agent.roomId}:${agent.name}`).sort().join(",") +
     "|" +
-    snapshot.rooms.map((room) => `${room.id}:${room.label}`).sort().join(",");
+    snapshot.rooms.map((room) => `${room.id}:${room.label}:${room.lit ? 1 : 0}`).sort().join(",");
   if (events.length > 0 || membership(previous) !== membership(next)) {
     events.push({ type: "event", event: "presence", payload: { sessions: recentSessions(next) } });
   }
@@ -214,8 +220,9 @@ function diffEvents(previous, next, runIds) {
 }
 
 function startAdapter({ config = loadConfig(), port = ADAPTER_PORT } = {}) {
-  const state = createState(config);
-  const watcher = createWatcher({ config, state });
+  const roots = projectRoots(config.claudeDir);
+  const state = createState(config, roots);
+  const watcher = createWatcher({ config, state, roots });
   const sockets = new Set();
   const runIds = new Map();
 

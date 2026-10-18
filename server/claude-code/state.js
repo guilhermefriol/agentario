@@ -1,15 +1,18 @@
 "use strict";
 
-const path = require("node:path");
 const { createHash } = require("node:crypto");
+const { locateCwd } = require("./rooms");
 
 const OWNER_ID = "friol";
 
-// Nomes fictícios: o personagem de cada sessão é escolhido por hash (estável entre reinícios).
+// Nomes russos (transliterados). Cada personagem ganha um nome único e estável enquanto estiver no prédio.
 const NAMES = [
-  "Ana", "Bento", "Cecília", "Davi", "Elisa", "Fábio", "Gabriela", "Heitor", "Isadora", "Joaquim",
-  "Lara", "Miguel", "Nina", "Otávio", "Paula", "Rafael", "Sofia", "Tiago", "Valentina", "Vicente",
-  "Alice", "Caio", "Helena", "Lucas", "Marina", "Pedro", "Clara", "Renato", "Bianca", "Gustavo",
+  "Andrei", "Serguei", "Maksim", "Iuri", "Dmitri", "Ivan", "Aleksei", "Nikolai", "Mikhail", "Vladimir",
+  "Boris", "Oleg", "Pavel", "Igor", "Fiodor", "Konstantin", "Viktor", "Anatoli", "Grigori", "Leonid",
+  "Stanislav", "Timofei", "Vassili", "Ievgueni", "Artiom", "Ruslan", "Kirill", "Arkadi", "Gennadi", "Valentin",
+  "Anastassia", "Natacha", "Olga", "Svetlana", "Tatiana", "Irina", "Iekaterina", "Liudmila", "Dária", "Ksenia",
+  "Ielena", "Marina", "Galina", "Vera", "Nadejda", "Sofia", "Polina", "Alina", "Ievguenia", "Valentina",
+  "Roman", "Iaroslav", "Bogdan", "Matvei", "Lev", "Egor", "Semion", "Vadim", "Gleb", "Danil",
 ];
 
 // Rótulo de tarefa vem só desta allowlist — nunca de texto do transcript.
@@ -32,7 +35,6 @@ const CODEX_COMMAND = /\bcodex\s+exec\b/;
 const CODEX_VERDICT = /veredito\W{0,12}(aprovar|revisar|bloquear)/i;
 
 const hash = (value) => createHash("sha256").update(String(value)).digest("hex");
-const nameFor = (key) => NAMES[parseInt(hash(key).slice(0, 8), 16) % NAMES.length];
 const taskFor = (toolName) => (toolName && TASK_LABELS[toolName]) || DEFAULT_TASK;
 
 const parseTime = (value) => {
@@ -61,6 +63,7 @@ const safeRole = (value) =>
 /** Estado de um turno (sessão ou subagente) derivado dos registros do transcript. */
 const createTurn = () => ({
   cwd: null,
+  firstEventAt: null,
   lastEventAt: null,
   working: false,
   lastTool: null,
@@ -71,15 +74,20 @@ const createTurn = () => ({
 function applyToTurn(turn, record, onVerdict) {
   const at = parseTime(record.timestamp);
   if (typeof record.cwd === "string" && record.cwd) turn.cwd = record.cwd;
+  const touch = () => {
+    if (!at) return;
+    turn.lastEventAt = Math.max(turn.lastEventAt ?? 0, at);
+    turn.firstEventAt = Math.min(turn.firstEventAt ?? at, at);
+  };
 
   if (record.type === "system" && record.subtype === "turn_duration") {
     turn.working = false;
     turn.pending.clear();
-    if (at) turn.lastEventAt = Math.max(turn.lastEventAt ?? 0, at);
+    touch();
     return;
   }
   if (record.type !== "user" && record.type !== "assistant") return;
-  if (at) turn.lastEventAt = Math.max(turn.lastEventAt ?? 0, at);
+  touch();
 
   const blocks = contentBlocks(record);
   if (record.type === "user") {
@@ -111,31 +119,63 @@ function applyToTurn(turn, record, onVerdict) {
   else if (stopReason === "tool_use" || turn.pending.size > 0) turn.working = true;
 }
 
+/** Nomes únicos e estáveis: o mesmo personagem mantém o nome enquanto estiver presente. */
+function createNameRegistry() {
+  const byId = new Map();
+  return {
+    sync(ids) {
+      const present = new Set(ids);
+      for (const id of byId.keys()) if (!present.has(id)) byId.delete(id);
+      const used = new Set(byId.values());
+      for (const id of ids) {
+        if (byId.has(id)) continue;
+        const start = parseInt(hash(id).slice(0, 8), 16) % NAMES.length;
+        let name = null;
+        for (let step = 0; step < NAMES.length && !name; step += 1) {
+          const candidate = NAMES[(start + step) % NAMES.length];
+          if (!used.has(candidate)) name = candidate;
+        }
+        for (let n = 2; !name; n += 1) {
+          const candidate = `${NAMES[start]} ${n}`;
+          if (!used.has(candidate)) name = candidate;
+        }
+        byId.set(id, name);
+        used.add(name);
+      }
+    },
+    nameOf: (id) => byId.get(id),
+  };
+}
+
 /**
- * Estado global: projetos (salas), sessões, estagiários e fiscais.
- * Puro — não toca no disco; o watcher alimenta via `ingest*`.
+ * Estado global: salas (pastas de projeto), sessões, subagentes e fiscais.
+ * Puro — não toca no disco; o watcher alimenta via `setProjects`/`ingest*`.
  */
-function createState(config) {
-  const projects = new Map(); // cwd → { id, folder }
+function createState(config, roots) {
+  const projects = new Map(); // pasta → { key, id, staff: string[] }
   const sessions = new Map(); // sessionId → turn
-  const interns = new Map(); // agentFileId → { turn, sessionId, toolUseId, role }
-  const fiscals = new Map(); // cwd → { verdict, at }
+  const interns = new Map(); // agentFileId → { turn, sessionId, toolUseId, agentType }
+  const fiscals = new Map(); // pasta → { verdict, at }
+  const names = createNameRegistry();
 
-  const projectSettings = (cwd) => config.projects[path.basename(cwd)] || null;
-  const isHidden = (cwd) => projectSettings(cwd)?.hidden === true;
+  const settingsOf = (key) => config.projects[key] || null;
 
-  function registerProject(cwd) {
-    if (!cwd || projects.has(cwd)) return;
-    projects.set(cwd, { id: `p-${hash(cwd).slice(0, 10)}`, folder: path.basename(cwd) });
+  function setProjects(list) {
+    const next = new Set();
+    for (const { key, staff } of list) {
+      next.add(key);
+      projects.set(key, { key, id: `p-${hash(key).slice(0, 10)}`, staff: staff || [] });
+    }
+    for (const key of projects.keys()) if (!next.has(key)) projects.delete(key);
   }
 
   function ingestSession(sessionId, record) {
     let turn = sessions.get(sessionId);
     if (!turn) sessions.set(sessionId, (turn = createTurn()));
     applyToTurn(turn, record, (verdict, at) => {
-      if (turn.cwd) fiscals.set(turn.cwd, { verdict, at: at ?? Date.now() });
+      const place = locateCwd(turn.cwd, roots);
+      if (place.kind === "room") fiscals.set(place.key, { verdict, at: at ?? Date.now() });
     });
-    registerProject(turn.cwd);
   }
 
   function ingestIntern(agentFileId, info, record) {
@@ -145,23 +185,24 @@ function createState(config) {
         turn: createTurn(),
         sessionId: info.sessionId,
         toolUseId: typeof info.toolUseId === "string" ? info.toolUseId : null,
-        role: safeRole(info.agentType),
+        agentType: typeof info.agentType === "string" ? info.agentType : "",
       };
       interns.set(agentFileId, intern);
     }
     applyToTurn(intern.turn, record, null);
-    registerProject(intern.turn.cwd);
   }
 
-  function projectLabel(cwd) {
-    const project = projects.get(cwd);
-    const settings = projectSettings(cwd);
-    if (settings?.label) return settings.label;
-    return config.showRealNames ? project.folder : `Sala ${project.id.slice(2, 6)}`;
+  function roomLabel(project) {
+    const label = settingsOf(project.key)?.label;
+    if (label) return label;
+    return config.showRealNames ? project.key : `Sala ${project.id.slice(2, 6)}`;
   }
 
-  function taskLabel(cwd, toolName) {
-    if (!config.showTasks || projectSettings(cwd)?.hideTasks) return DEFAULT_TASK;
+  /** Política de tarefas da sala: publico → rótulo; interno → genérico; oculto → nada. */
+  function taskLabel(key, toolName) {
+    const policy = key ? settingsOf(key)?.tasks ?? "publico" : "publico";
+    if (!config.showTasks || policy === "oculto") return null;
+    if (policy === "interno") return DEFAULT_TASK;
     return taskFor(toolName);
   }
 
@@ -172,60 +213,94 @@ function createState(config) {
     const activeMs = config.activeWindowSeconds * 1000;
     const fiscalMs = config.fiscalMinutes * 60 * 1000;
 
-    const rooms = [...projects.entries()]
-      .filter(([cwd]) => !isHidden(cwd))
-      .map(([cwd, project]) => ({ id: project.id, label: projectLabel(cwd), cwd }));
-    const roomByCwd = new Map(rooms.map((room) => [room.cwd, room]));
+    const visible = [...projects.values()].filter((project) => settingsOf(project.key)?.hidden !== true);
+    const roomByKey = new Map(visible.map((project) => [project.key, project]));
+    const people = [];
 
-    const agents = [
-      { id: OWNER_ID, name: "Friol", kind: "owner", role: "Dono", projectId: null, working: false, task: null, updatedAt: null },
-    ];
+    // place: { kind: "room", key } | { kind: "center" }; devolve null se a sala está oculta/fora.
+    const placeOf = (cwd) => {
+      const place = locateCwd(cwd, roots);
+      if (place.kind === "center") return { roomKey: null };
+      if (place.kind === "room" && roomByKey.has(place.key)) return { roomKey: place.key };
+      return null;
+    };
 
     for (const [sessionId, turn] of sessions) {
-      const room = turn.cwd && roomByCwd.get(turn.cwd);
-      if (!room || !turn.lastEventAt || now - turn.lastEventAt > presenceMs) continue;
+      if (!turn.lastEventAt || now - turn.lastEventAt > presenceMs) continue;
+      const place = placeOf(turn.cwd);
+      if (!place) continue;
       const working = turn.working && now - turn.lastEventAt <= idleFallbackMs;
-      agents.push({
+      people.push({
         id: `s-${hash(sessionId).slice(0, 12)}`,
-        name: nameFor(sessionId),
         kind: "session",
         role: "Claude",
-        projectId: room.id,
+        roomKey: place.roomKey,
         working,
-        task: working ? taskLabel(turn.cwd, turn.lastTool) : null,
+        task: working ? taskLabel(place.roomKey, turn.lastTool) : null,
         updatedAt: turn.lastEventAt,
       });
     }
 
+    // Subagentes ativos; os do tipo de um cadastrado da sala viram o próprio funcionário.
+    const activeRuns = [];
     for (const [agentFileId, intern] of interns) {
       const turn = intern.turn;
-      const room = turn.cwd && roomByCwd.get(turn.cwd);
-      if (!room || !turn.lastEventAt) continue;
+      if (!turn.lastEventAt) continue;
       const parent = sessions.get(intern.sessionId);
+      const place = placeOf(turn.cwd ?? parent?.cwd);
+      if (!place) continue;
       const parentWaiting = Boolean(intern.toolUseId && parent?.pending.has(intern.toolUseId));
       const recent = turn.working && now - turn.lastEventAt <= activeMs;
       if (!(parentWaiting && now - turn.lastEventAt <= idleFallbackMs) && !recent) continue;
-      agents.push({
-        id: `i-${hash(agentFileId).slice(0, 12)}`,
-        name: `Estagiário ${nameFor(agentFileId)}`,
+      activeRuns.push({ agentFileId, intern, roomKey: place.roomKey });
+    }
+    activeRuns.sort((a, b) => (a.intern.turn.firstEventAt ?? 0) - (b.intern.turn.firstEventAt ?? 0));
+
+    const staffWork = new Map(); // "pasta\u0000nome" → run que representa o funcionário
+    for (const run of activeRuns) {
+      const project = run.roomKey ? roomByKey.get(run.roomKey) : null;
+      const staffName = project?.staff.find(
+        (name) => name.toLowerCase() === run.intern.agentType.toLowerCase(),
+      );
+      const staffKey = staffName ? `${run.roomKey}\u0000${staffName}` : null;
+      if (staffKey && !staffWork.has(staffKey)) {
+        staffWork.set(staffKey, run); // execução mais antiga = o funcionário
+        continue;
+      }
+      const role = safeRole(run.intern.agentType);
+      people.push({
+        id: `i-${hash(run.agentFileId).slice(0, 12)}`,
         kind: "intern",
-        role: intern.role,
-        projectId: room.id,
+        role: staffKey ? `${role} (reforço)` : role,
+        roomKey: run.roomKey,
         working: true,
-        task: taskLabel(turn.cwd, turn.lastTool),
-        updatedAt: turn.lastEventAt,
+        task: taskLabel(run.roomKey, run.intern.turn.lastTool),
+        updatedAt: run.intern.turn.lastEventAt,
       });
     }
 
-    for (const [cwd, fiscal] of fiscals) {
-      const room = roomByCwd.get(cwd);
-      if (!room || now - fiscal.at > fiscalMs) continue;
-      agents.push({
-        id: `f-${room.id.slice(2)}`,
-        name: "Fiscal Codex",
+    for (const project of visible) {
+      for (const staffName of project.staff) {
+        const run = staffWork.get(`${project.key}\u0000${staffName}`);
+        people.push({
+          id: `a-${hash(`${project.key}\u0000${staffName}`).slice(0, 12)}`,
+          kind: "staff",
+          role: staffName,
+          roomKey: project.key,
+          working: Boolean(run),
+          task: run ? taskLabel(project.key, run.intern.turn.lastTool) : null,
+          updatedAt: run ? run.intern.turn.lastEventAt : null,
+        });
+      }
+    }
+
+    for (const [key, fiscal] of fiscals) {
+      if (!roomByKey.has(key) || now - fiscal.at > fiscalMs) continue;
+      people.push({
+        id: `f-${roomByKey.get(key).id.slice(2)}`,
         kind: "fiscal",
         role: "Fiscal",
-        projectId: room.id,
+        roomKey: key,
         working: true,
         task: `Veredito: ${fiscal.verdict}`,
         verdict: fiscal.verdict,
@@ -233,13 +308,37 @@ function createState(config) {
       });
     }
 
-    return {
-      rooms: rooms.map(({ id, label }) => ({ id, label })),
-      agents,
-    };
+    const litKeys = new Set(
+      people.filter((p) => p.working && p.kind !== "fiscal" && p.roomKey).map((p) => p.roomKey),
+    );
+    const rooms = visible.map((project) => ({
+      id: project.id,
+      label: roomLabel(project),
+      lit: litKeys.has(project.key),
+    }));
+
+    names.sync(people.filter((p) => p.kind !== "fiscal").map((p) => p.id));
+    const agents = [
+      {
+        id: OWNER_ID,
+        name: "Friol",
+        kind: "owner",
+        role: "Deus Onipotente",
+        roomId: null,
+        working: false,
+        task: null,
+        updatedAt: null,
+      },
+      ...people.map(({ roomKey, ...person }) => ({
+        ...person,
+        name: person.kind === "fiscal" ? "Fiscal Codex" : names.nameOf(person.id),
+        roomId: roomKey ? roomByKey.get(roomKey).id : null,
+      })),
+    ];
+    return { rooms, agents };
   }
 
-  return { registerProject, ingestSession, ingestIntern, snapshot };
+  return { setProjects, ingestSession, ingestIntern, snapshot };
 }
 
-module.exports = { createState, OWNER_ID, TASK_LABELS };
+module.exports = { createState, OWNER_ID, TASK_LABELS, NAMES };

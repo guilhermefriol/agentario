@@ -25,9 +25,11 @@ describe("agentarioAgents", () => {
       id: "s-1",
       name: "Ana",
       kind: "session",
+      role: null,
       status: "working",
       task: "Rodando comando",
       room: "Sala A",
+      roomId: null,
     });
     expect(parseAgentarioAgents(null)).toEqual([]);
     expect(parseAgentarioAgents({ agents: "x" })).toEqual([]);

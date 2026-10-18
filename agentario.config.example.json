@@ -5,9 +5,12 @@
   "activeWindowSeconds": 120,
   "showRealNames": true,
   "showTasks": true,
+  "layout": "acesas",
   "night": { "enabled": true, "from": "22:00", "to": "07:00" },
+  "exclude": ["backup", "arquivo"],
   "projects": {
-    "projeto-exemplo": { "label": "Projeto Exemplo", "hidden": false, "hideTasks": false },
-    "outro-projeto": { "label": "Outro Projeto", "hidden": true }
+    "projeto-exemplo": { "label": "Projeto Exemplo", "tasks": "publico" },
+    "projeto-interno": { "tasks": "interno" },
+    "outro-projeto": { "hidden": true }
   }
 }

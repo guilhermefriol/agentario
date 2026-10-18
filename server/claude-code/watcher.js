@@ -2,7 +2,8 @@
 
 const fs = require("node:fs");
 const path = require("node:path");
-const { createTailer, readCwdFromHead } = require("./tail");
+const { createTailer } = require("./tail");
+const { projectRoots, listProjectFolders, readRegisteredAgents } = require("./rooms");
 
 const RECENT_FILE_MS = 24 * 3600 * 1000;
 const META_MAX_BYTES = 64 * 1024;
@@ -38,21 +39,23 @@ const readMeta = (metaPath) => {
  * Varre `<claudeDir>/projects` (só pastas de transcript, que começam com "-"),
  * ignora symlinks e alimenta o estado com os registros novos. Somente leitura.
  */
-function createWatcher({ config, state }) {
-  const projectsDir = path.join(config.claudeDir, "projects");
+function createWatcher({ config, state, roots = projectRoots(config.claudeDir) }) {
+  const projectsDir = roots.real;
   const tailers = new Map(); // caminho → { tailer, ingest }
-  const headCwdCache = new Map(); // caminho → { mtimeMs, cwd }
+  const staffCache = new Map(); // pasta → { mtimeMs, staff }
 
   const track = (filePath, ingest) => {
     if (!tailers.has(filePath)) tailers.set(filePath, { tailer: createTailer(filePath), ingest });
   };
 
-  function registerIdleRoom(filePath, stat) {
-    const cached = headCwdCache.get(filePath);
-    if (cached && cached.mtimeMs === stat.mtimeMs) return state.registerProject(cached.cwd);
-    const cwd = readCwdFromHead(filePath);
-    headCwdCache.set(filePath, { mtimeMs: stat.mtimeMs, cwd });
-    state.registerProject(cwd);
+  function staffOf(folder) {
+    const agentsDir = path.join(projectsDir, folder, ".claude", "agents");
+    const mtimeMs = lstatOrNull(agentsDir)?.mtimeMs ?? 0;
+    const cached = staffCache.get(folder);
+    if (cached && cached.mtimeMs === mtimeMs) return cached.staff;
+    const staff = mtimeMs ? readRegisteredAgents(roots, folder) : [];
+    staffCache.set(folder, { mtimeMs, staff });
+    return staff;
   }
 
   function discoverInterns(transcriptDir, sessionId, now) {
@@ -72,26 +75,24 @@ function createWatcher({ config, state }) {
     }
   }
 
-  /** Redescobre pastas e arquivos de transcript. */
+  /** Redescobre salas (pastas de projeto) e arquivos de transcript. */
   function discover(now = Date.now()) {
+    state.setProjects(
+      listProjectFolders(roots, config.exclude).map((key) => ({ key, staff: staffOf(key) })),
+    );
     for (const dirEntry of listEntries(projectsDir)) {
       if (!dirEntry.isDirectory() || !dirEntry.name.startsWith("-")) continue;
       const transcriptDir = path.join(projectsDir, dirEntry.name);
-      let newestIdle = null;
       for (const entry of listEntries(transcriptDir)) {
         if (!entry.isFile() || !entry.name.endsWith(".jsonl")) continue;
         const filePath = path.join(transcriptDir, entry.name);
         const stat = lstatOrNull(filePath);
         if (!stat || !stat.isFile()) continue;
         const sessionId = entry.name.slice(0, -".jsonl".length);
-        if (now - stat.mtimeMs <= RECENT_FILE_MS) {
-          track(filePath, (record) => state.ingestSession(sessionId, record));
-          discoverInterns(transcriptDir, sessionId, now);
-        } else if (!newestIdle || stat.mtimeMs > newestIdle.stat.mtimeMs) {
-          newestIdle = { filePath, stat };
-        }
+        if (now - stat.mtimeMs > RECENT_FILE_MS) continue;
+        track(filePath, (record) => state.ingestSession(sessionId, record));
+        discoverInterns(transcriptDir, sessionId, now);
       }
-      if (newestIdle) registerIdleRoom(newestIdle.filePath, newestIdle.stat);
     }
   }
 

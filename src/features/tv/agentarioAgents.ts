@@ -1,22 +1,25 @@
 import type { OfficeAgent } from "@/features/retro-office/core/types";
 
-export type AgentarioAgentKind = "owner" | "session" | "intern" | "fiscal";
+export type AgentarioAgentKind = "owner" | "session" | "staff" | "intern" | "fiscal";
 
 export type AgentarioAgent = {
   id: string;
   name: string;
   kind: AgentarioAgentKind;
+  role: string | null;
   status: "working" | "idle";
   task: string | null;
   room: string | null;
+  roomId: string | null;
 };
 
-const KINDS: ReadonlySet<string> = new Set(["owner", "session", "intern", "fiscal"]);
+const KINDS: ReadonlySet<string> = new Set(["owner", "session", "staff", "intern", "fiscal"]);
 
 // Cores fixas por tipo: o personagem é reconhecível de longe na TV.
 const KIND_COLORS: Record<AgentarioAgentKind, string> = {
   owner: "#f5c542",
   session: "#5b8def",
+  staff: "#9b6cf0",
   intern: "#4fc08d",
   fiscal: "#e8604c",
 };
@@ -24,6 +27,7 @@ const KIND_COLORS: Record<AgentarioAgentKind, string> = {
 const KIND_ITEMS: Record<AgentarioAgentKind, string> = {
   owner: "coffee",
   session: "laptop",
+  staff: "globe",
   intern: "books",
   fiscal: "shield",
 };
@@ -48,9 +52,11 @@ export function parseAgentarioAgents(payload: unknown): AgentarioAgent[] {
       id,
       name,
       kind: kind as AgentarioAgentKind,
+      role: optionalString(raw.role),
       status: raw.agentario.status === "working" ? "working" : "idle",
       task: optionalString(raw.agentario.task),
       room: optionalString(raw.agentario.room),
+      roomId: optionalString(raw.agentario.roomId),
     });
   }
   return agents;
@@ -78,9 +84,11 @@ export function sameAgents(a: AgentarioAgent[], b: AgentarioAgent[]): boolean {
       agent.id === other.id &&
       agent.name === other.name &&
       agent.kind === other.kind &&
+      agent.role === other.role &&
       agent.status === other.status &&
       agent.task === other.task &&
-      agent.room === other.room
+      agent.room === other.room &&
+      agent.roomId === other.roomId
     );
   });
 }
