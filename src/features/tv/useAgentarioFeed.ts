@@ -5,8 +5,13 @@ import { GatewayClient } from "@/lib/gateway/GatewayClient";
 import {
   isAgentarioHello,
   parseAgentarioAgents,
+  parseAgentarioConfig,
+  parseAgentarioRooms,
   sameAgents,
+  sameRooms,
   type AgentarioAgent,
+  type AgentarioConfig,
+  type AgentarioRoom,
 } from "@/features/tv/agentarioAgents";
 
 export const DEFAULT_ADAPTER_URL =
@@ -22,6 +27,10 @@ export type AgentarioFeedStatus = "connecting" | "connected" | "disconnected" | 
 export type AgentarioFeed = {
   status: AgentarioFeedStatus;
   agents: AgentarioAgent[];
+  rooms: AgentarioRoom[];
+  config: AgentarioConfig | null;
+  /** Personagens da primeira carga (os que chegam depois entram pela porta). */
+  initialIds: ReadonlySet<string> | null;
 };
 
 /**
@@ -31,6 +40,9 @@ export type AgentarioFeed = {
 export function useAgentarioFeed(url: string = DEFAULT_ADAPTER_URL): AgentarioFeed {
   const [status, setStatus] = useState<AgentarioFeedStatus>("connecting");
   const [agents, setAgents] = useState<AgentarioAgent[]>([]);
+  const [rooms, setRooms] = useState<AgentarioRoom[]>([]);
+  const [config, setConfig] = useState<AgentarioConfig | null>(null);
+  const [initialIds, setInitialIds] = useState<ReadonlySet<string> | null>(null);
 
   useEffect(() => {
     let disposed = false;
@@ -66,10 +78,16 @@ export function useAgentarioFeed(url: string = DEFAULT_ADAPTER_URL): AgentarioFe
       }
       fetching = true;
       try {
-        const payload = await client.call("agents.list", {});
+        const [agentsPayload, roomsPayload] = await Promise.all([
+          client.call("agents.list", {}),
+          client.call("agentario.rooms", {}),
+        ]);
         if (disposed || gen !== generation) return;
-        const next = parseAgentarioAgents(payload);
-        setAgents((previous) => (sameAgents(previous, next) ? previous : next));
+        const nextAgents = parseAgentarioAgents(agentsPayload);
+        const nextRooms = parseAgentarioRooms(roomsPayload);
+        setAgents((previous) => (sameAgents(previous, nextAgents) ? previous : nextAgents));
+        setInitialIds((previous) => previous ?? new Set(nextAgents.map((agent) => agent.id)));
+        setRooms((previous) => (sameRooms(previous, nextRooms) ? previous : nextRooms));
       } catch {
         // A queda da conexão é tratada pelo onStatus; aqui só esperamos a próxima tentativa.
       } finally {
@@ -140,6 +158,12 @@ export function useAgentarioFeed(url: string = DEFAULT_ADAPTER_URL): AgentarioFe
 
       backoffMs = BACKOFF_MIN_MS;
       setStatus("connected");
+      nextClient
+        .call("agentario.config", {})
+        .then((payload) => {
+          if (!disposed && gen === generation) setConfig(parseAgentarioConfig(payload));
+        })
+        .catch(() => {});
       unsubscribers.push(
         nextClient.onStatus((next) => {
           if (gen !== generation || next !== "disconnected" || disposed) return;
@@ -161,5 +185,5 @@ export function useAgentarioFeed(url: string = DEFAULT_ADAPTER_URL): AgentarioFe
     };
   }, [url]);
 
-  return { status, agents };
+  return { status, agents, rooms, config, initialIds };
 }

@@ -97,3 +97,49 @@ export function sameAgents(a: AgentarioAgent[], b: AgentarioAgent[]): boolean {
 export function isAgentarioHello(hello: unknown): boolean {
   return isRecord(hello) && isRecord(hello.agentario) && hello.agentario.version === 1;
 }
+
+export type AgentarioRoom = { id: string; label: string; lit: boolean };
+
+/** Lê `agentario.rooms`: todas as salas de projeto (inclusive apagadas), em ordem estável. */
+export function parseAgentarioRooms(payload: unknown): AgentarioRoom[] {
+  if (!isRecord(payload) || !Array.isArray(payload.rooms)) return [];
+  const rooms: AgentarioRoom[] = [];
+  for (const raw of payload.rooms) {
+    if (!isRecord(raw)) continue;
+    const id = optionalString(raw.id);
+    const label = optionalString(raw.label);
+    if (id && label) rooms.push({ id, label, lit: raw.lit === true });
+  }
+  return rooms;
+}
+
+export function sameRooms(a: AgentarioRoom[], b: AgentarioRoom[]): boolean {
+  return (
+    a.length === b.length &&
+    a.every((room, i) => room.id === b[i].id && room.label === b[i].label && room.lit === b[i].lit)
+  );
+}
+
+export type AgentarioConfig = {
+  layout: "acesas" | "baias" | "andares";
+  night: { enabled: boolean; from: string; to: string };
+};
+
+const HHMM = /^([01]\d|2[0-3]):[0-5]\d$/;
+
+/** Lê `agentario.config` (só preferências de exibição). */
+export function parseAgentarioConfig(payload: unknown): AgentarioConfig {
+  const layout =
+    isRecord(payload) && (payload.layout === "baias" || payload.layout === "andares")
+      ? payload.layout
+      : "acesas";
+  const night = isRecord(payload) && isRecord(payload.night) ? payload.night : {};
+  return {
+    layout,
+    night: {
+      enabled: night.enabled === true,
+      from: typeof night.from === "string" && HHMM.test(night.from) ? night.from : "22:00",
+      to: typeof night.to === "string" && HHMM.test(night.to) ? night.to : "07:00",
+    },
+  };
+}

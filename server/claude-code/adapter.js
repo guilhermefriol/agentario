@@ -33,6 +33,7 @@ const READ_METHODS = [
   "agent.wait",
   "wake",
   "agentario.rooms",
+  "agentario.config",
 ];
 
 const randomId = () => randomUUID().replace(/-/g, "");
@@ -78,7 +79,7 @@ function recentSessions(snapshot) {
 }
 
 /** Responde a um método. `getSnapshot` devolve a visão atual do estado. */
-function handleMethod(method, params, id, getSnapshot) {
+function handleMethod(method, params, id, getSnapshot, config = null) {
   const p = params || {};
   if (!READ_METHODS.includes(method)) {
     return resErr(id, "read_only", "O Agentário é somente leitura.");
@@ -167,6 +168,13 @@ function handleMethod(method, params, id, getSnapshot) {
 
     case "agentario.rooms":
       return resOk(id, { rooms: snapshot.rooms });
+
+    case "agentario.config":
+      // Só preferências de exibição; nada de caminhos ou da lista de projetos.
+      return resOk(id, {
+        layout: config?.layout ?? "acesas",
+        night: config?.night ?? { enabled: false, from: "22:00", to: "07:00" },
+      });
 
     default:
       return resErr(id, "read_only", "O Agentário é somente leitura.");
@@ -301,7 +309,7 @@ function startAdapter({ config = loadConfig(), port = ADAPTER_PORT } = {}) {
       }
       if (!connected) return send(resErr(id, "not_connected", "Send connect first."));
       try {
-        send(handleMethod(method, params, id, () => current));
+        send(handleMethod(method, params, id, () => current, config));
       } catch {
         send(resErr(id, "internal_error", "Erro interno."));
       }
