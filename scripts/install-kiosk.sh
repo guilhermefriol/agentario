@@ -1,13 +1,23 @@
 #!/bin/sh
-# Instala o Agentário para abrir sozinho no login (LaunchAgents do usuário, sem sudo):
+# Instala o Agentário para subir sozinho no login (LaunchAgents do usuário, sem sudo):
 #   com.agentario.tv     — painel (adaptador + interface, build de produção); reinicia se cair.
-#   com.agentario.kiosk  — abre a /tv em modo quiosque quando o painel responder.
-# Uso: scripts/install-kiosk.sh [--dry-run]
+#   com.agentario.kiosk  — só com --kiosk: abre a /tv em tela cheia num navegador Chromium.
+# Sem --kiosk, abra http://localhost:3210/tv no navegador que quiser.
+# Uso: scripts/install-kiosk.sh [--kiosk] [--dry-run]
 # Desfazer: scripts/uninstall-kiosk.sh
 set -eu
 
 DRY_RUN=0
-[ "${1:-}" = "--dry-run" ] && DRY_RUN=1
+KIOSK=0
+for arg in "$@"; do
+  case "$arg" in
+    --dry-run) DRY_RUN=1 ;;
+    --kiosk) KIOSK=1 ;;
+    *) echo "opção desconhecida: $arg" >&2; exit 2 ;;
+  esac
+done
+LABELS="com.agentario.tv"
+[ "$KIOSK" = 1 ] && LABELS="$LABELS com.agentario.kiosk"
 
 REPO="$(cd "$(dirname "$0")/.." && pwd)"
 NODE="$(command -v node)"
@@ -53,10 +63,12 @@ write_plist com.agentario.tv \
 "  <key>KeepAlive</key><dict><key>SuccessfulExit</key><false/></dict>
   <key>ThrottleInterval</key><integer>30</integer>"
 
-write_plist com.agentario.kiosk \
+if [ "$KIOSK" = 1 ]; then
+  write_plist com.agentario.kiosk \
 "    <string>/bin/sh</string>
     <string>$(xml_escape "$REPO/scripts/kiosk.sh")</string>" \
 ""
+fi
 
 if [ "$DRY_RUN" = 1 ]; then
   echo "[dry-run] plists gerados e validados em $OUT_DIR (nada instalado):"
@@ -67,7 +79,7 @@ fi
 echo "[kiosk] build de produção…"
 (cd "$REPO" && npm run build)
 mkdir -p "$LOG_DIR"
-for label in com.agentario.tv com.agentario.kiosk; do
+for label in $LABELS; do
   launchctl bootout "gui/$(id -u)/$label" 2>/dev/null || true
   launchctl bootstrap "gui/$(id -u)" "$AGENTS_DIR/$label.plist"
 done
