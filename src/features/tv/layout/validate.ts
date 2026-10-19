@@ -44,21 +44,9 @@ function checkPlane(
 
 /**
  * Problemas de navegação do layout, com a mesma grade e alcance do A* da cena: todo lugar
- * numa célula livre, distinta e alcançável a partir da entrada (porta do centro ou elevador
- * do andar), e toda porta de zona alcançável. Lista vazia = layout válido.
+ * numa célula livre, distinta e alcançável a partir da porta do centro, e toda porta de zona
+ * alcançável. Lista vazia = layout válido.
  */
 export function layoutIssues(layout: Layout): LayoutIssue[] {
-  const spots = allSpots(layout);
-  if (layout.kind !== "andares") {
-    return checkPlane(layout.furniture, layout.zones, spots, [layout.center.door]);
-  }
-  return layout.floorPlans.flatMap((plan) => {
-    const origins = [plan.elevator, ...(plan.zones.some((z) => z.kind === "center") ? [layout.center.door] : [])];
-    return checkPlane(
-      plan.furniture,
-      plan.zones,
-      spots.filter((spot) => spot.floor === plan.floor),
-      origins,
-    );
-  });
+  return checkPlane(layout.furniture, layout.zones, allSpots(layout), [layout.center.door]);
 }

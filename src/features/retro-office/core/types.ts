@@ -149,6 +149,4 @@ export type AgentDirectedTarget = {
   pose: AgentDirectedPose;
   workoutStyle?: "run" | "lift" | "bike" | "box" | "row" | "stretch";
   spawnFrom?: { x: number; y: number };
-  /** Andar do alvo (usado só pela tela de andares do Agentário). */
-  floor?: number;
 };

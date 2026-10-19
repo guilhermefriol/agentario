@@ -172,7 +172,6 @@ function handleMethod(method, params, id, getSnapshot, config = null) {
     case "agentario.config":
       // Só preferências de exibição; nada de caminhos ou da lista de projetos.
       return resOk(id, {
-        layout: config?.layout ?? "acesas",
         night: config?.night ?? { enabled: false, from: "22:00", to: "07:00" },
       });
 

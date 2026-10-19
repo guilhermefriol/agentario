@@ -5,7 +5,7 @@ Roda localmente no Mac e é exibido numa TV pelo HDMI.
 
 Baseado no [Claw3D](https://github.com/iamlukethedev/Claw3D) (MIT), sem OpenClaw: a fonte de dados é o `~/.claude` local, lido somente em modo leitura.
 
-> **Status:** funcionando — salas por projeto, 3 layouts, Friol, área de lazer, demonstração, modo noite e decoração.
+> **Status:** funcionando — um andar com todas as salas, Friol, área de lazer, demonstração, modo noite e decoração.
 
 ## Rodando
 
@@ -34,14 +34,11 @@ Conferência rápida com o painel no ar: `npm run smoke:tv`.
 
 | Ação | Como |
 |---|---|
-| Trocar layout | teclas **1** (só acesas), **2** (baias), **3** (andares), botões no canto ou `?layout=acesas\|baias\|andares` |
 | Modo demonstração | clique no logo ou `?demo=1` (não fica salvo) |
 | Cartão do personagem | clique no personagem (Esc fecha) |
 | Modo edição (decoração) | tecla **E** ou botão "✎ Editar" |
 
-- **Só acesas:** só as salas com trabalho aparecem; as apagadas ficam listadas embaixo.
-- **Baias:** todas as salas em baias abertas.
-- **Andares:** um andar por vez (troca a cada 20 s, priorizando os que têm sala acesa); a sala do Friol e o lazer ficam no **terraço**. Troca de andar pelo elevador.
+- **Escritório:** um andar com todas as salas de projeto (acesas e apagadas, em ordem alfabética), um corredor com a área de espera e, embaixo, a sala do Friol e o lazer. Cada sala tem uma mesa por funcionário cadastrado + 1 (até 4).
 - A decoração aceita só itens que não bloqueiam a passagem e fica em `.agentario/decoracao.json` (fora do git), gravada por uma rota que só aceita a própria máquina.
 
 ## Ideia
@@ -63,7 +60,6 @@ O `agentario.config.local.json` contém a lista real de projetos e **nunca** é 
 
 | Campo | Efeito |
 |---|---|
-| `layout` | layout padrão (`acesas`, `baias`, `andares`) |
 | `night` | modo noite: `{ "enabled": true, "from": "22:00", "to": "07:00" }` |
 | `exclude` | expressões que escondem pastas (ex.: backups) |
 | `projects.<pasta>.label` | nome exibido |

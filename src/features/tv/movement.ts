@@ -21,14 +21,19 @@ export function unitHash(value: string): number {
   return (h >>> 0) / 4294967296;
 }
 
-/** Quantos lugares cada sala precisa e quantas pessoas existem (dimensiona o layout). */
+/**
+ * Dimensionamento do layout: mesas por sala estáveis (funcionários cadastrados + 1 para a sessão
+ * do Claude), quantas pessoas estão em cada sala agora e quantas existem no total.
+ */
 export function layoutDemand(agents: AgentarioAgent[]): LayoutDemand {
   const seatsByRoom: Record<string, number> = {};
+  const colsByRoom: Record<string, number> = {};
   for (const agent of agents) {
     if (!agent.roomId || agent.kind === "fiscal" || agent.kind === "owner") continue;
     seatsByRoom[agent.roomId] = (seatsByRoom[agent.roomId] ?? 0) + 1;
+    if (agent.kind === "staff") colsByRoom[agent.roomId] = (colsByRoom[agent.roomId] ?? 1) + 1;
   }
-  return { seatsByRoom, population: agents.length };
+  return { seatsByRoom, colsByRoom, population: agents.length };
 }
 
 export type MovementInput = {
@@ -41,18 +46,13 @@ export type MovementInput = {
   initialIds?: ReadonlySet<string>;
 };
 
-const toTarget = (
-  spot: Spot,
-  spawnFrom?: { x: number; y: number; floor?: number },
-): AgentDirectedTarget & { spawnFloor?: number } => ({
+const toTarget = (spot: Spot, spawnFrom?: { x: number; y: number }): AgentDirectedTarget => ({
   x: spot.x,
   y: spot.y,
   facing: spot.facing,
   pose: spot.pose,
   workoutStyle: spot.workoutStyle,
-  floor: spot.floor,
-  spawnFrom: spawnFrom ? { x: spawnFrom.x, y: spawnFrom.y } : undefined,
-  spawnFloor: spawnFrom ? spawnFrom.floor : undefined,
+  spawnFrom,
 });
 
 /**
@@ -61,18 +61,18 @@ const toTarget = (
  * parado em sala acesa → até 50% no lazer (troca a cada 4 min); algumas visitas curtas ao Friol;
  * quem não couber no lazer vai para a área de espera.
  */
-export type MovementTarget = AgentDirectedTarget & { spawnFloor?: number };
-
-export function assignTargets(input: MovementInput): Record<string, MovementTarget> {
+export function assignTargets(input: MovementInput): Record<string, AgentDirectedTarget> {
   const { layout, rooms, agents, now, demo = false, initialIds } = input;
   const windowMs = demo ? DEMO_LEISURE_WINDOW_MS : LEISURE_WINDOW_MS;
   const ratio = demo ? DEMO_LEISURE_RATIO : LEISURE_RATIO;
   const leisureWindow = Math.floor(now / windowMs);
   const visitWindow = Math.floor(now / VISIT_WINDOW_MS);
   const litById = new Map(rooms.map((room) => [room.id, room.lit]));
-  const targets: Record<string, MovementTarget> = {};
-  const centerDoor = { ...layout.center.door, floor: layout.center.friol.floor };
-  const arriving = (id: string) => (initialIds && !initialIds.has(id) ? centerDoor : undefined);
+  const targets: Record<string, AgentDirectedTarget> = {};
+  const centerDoor = layout.center.door;
+  // Quem chega depois da primeira carga entra pela porta do centro; personagens da demonstração já surgem no lugar.
+  const arriving = (id: string) =>
+    initialIds && !initialIds.has(id) && !id.startsWith("demo:") ? centerDoor : undefined;
 
   const mustLeave: AgentarioAgent[] = [];
   const mayLeave: AgentarioAgent[] = [];
@@ -123,7 +123,8 @@ export function assignTargets(input: MovementInput): Record<string, MovementTarg
     );
     ordered.forEach((agent, index) => {
       const seat = seats[index] ?? layout.fiscalByRoom[roomId] ?? layout.center.fiscal;
-      targets[agent.id] = toTarget(seat, agent.kind === "intern" ? centerDoor : arriving(agent.id));
+      const walksIn = agent.kind === "intern" && !agent.id.startsWith("demo:");
+      targets[agent.id] = toTarget(seat, walksIn ? centerDoor : arriving(agent.id));
     });
   }
   [...centerStay]

@@ -9,7 +9,7 @@ import {
   OfficeFlagPole,
   RussiaFlagArt,
 } from "@/features/retro-office/scene/environment";
-import type { FloorPlan, Layout, Zone } from "@/features/tv/layout/types";
+import type { Layout, Zone } from "@/features/tv/layout/types";
 import { sceneSafeText } from "@/features/tv/sceneText";
 
 const FLOOR_LIT = "#e9dcc4";
@@ -54,7 +54,7 @@ function ZoneLabel({ zone }: { zone: Zone }) {
   const lines = Math.max(1, Math.ceil(textWidth / maxWidth));
   const plateHeight = fontSize * (1.25 * lines + 0.3);
   return (
-    <Billboard position={[x, zone.open ? 0.95 : 1.55, z]}>
+    <Billboard position={[x, 1.55, z]}>
       <mesh position={[0, plateHeight / 2 - fontSize * 0.15, -0.002]}>
         <planeGeometry args={[Math.min(maxWidth, textWidth) + 0.3, plateHeight]} />
         <meshBasicMaterial color="#0b0906" transparent opacity={dark ? 0.55 : 0.8} />
@@ -139,31 +139,6 @@ function BathroomStalls({ zone }: { zone: Zone }) {
   );
 }
 
-/** Elevador e nome do andar (layout "andares"). */
-function FloorMarkers({ plan }: { plan: FloorPlan }) {
-  const [ex, , ez] = toWorld(plan.elevator.x + 14, plan.elevator.y);
-  const [lx, , lz] = toWorld(14, 20);
-  return (
-    <group>
-      <group position={[ex, 0, ez]}>
-        <mesh position={[0, 0.7, 0]} castShadow>
-          <boxGeometry args={[10 * SCALE, 1.4, 60 * SCALE]} />
-          <meshStandardMaterial color="#8a939c" metalness={0.6} roughness={0.35} />
-        </mesh>
-        <mesh position={[-6 * SCALE, 0.65, 0]}>
-          <boxGeometry args={[2 * SCALE, 1.2, 50 * SCALE]} />
-          <meshStandardMaterial color="#c9d1d9" metalness={0.8} roughness={0.2} />
-        </mesh>
-      </group>
-      <Billboard position={[lx, 0.6, lz]}>
-        <Text fontSize={0.3} color="#f5c542" outlineWidth={0.015} outlineColor="#16110a" anchorX="left">
-          {sceneSafeText(plan.label)}
-        </Text>
-      </Billboard>
-    </group>
-  );
-}
-
 /** Auréola sobre o lugar do Friol. */
 function Halo({ layout }: { layout: Layout }) {
   const [x, , z] = toWorld(layout.center.friol.x, layout.center.friol.y);
@@ -175,16 +150,8 @@ function Halo({ layout }: { layout: Layout }) {
   );
 }
 
-export const TvEnvironment = memo(function TvEnvironment({
-  layout,
-  plan = null,
-}: {
-  layout: Layout;
-  /** Andar mostrado (layout "andares"). */
-  plan?: FloorPlan | null;
-}) {
-  const bounds = plan?.bounds ?? layout.bounds;
-  const zones = plan?.zones ?? layout.zones;
+export const TvEnvironment = memo(function TvEnvironment({ layout }: { layout: Layout }) {
+  const { bounds, zones } = layout;
   const ground = {
     x: bounds.minX,
     y: bounds.minY,
@@ -210,7 +177,6 @@ export const TvEnvironment = memo(function TvEnvironment({
       {church ? <ChurchFurniture zone={church} /> : null}
       {bathroom ? <BathroomStalls zone={bathroom} /> : null}
       {hasCenter ? <Halo layout={layout} /> : null}
-      {plan ? <FloorMarkers plan={plan} /> : null}
       {hasCenter && layout.flags ? (
         <>
           <OfficeFlagPole position={toWorld(layout.flags.russia.x, layout.flags.russia.y)} rotY={0.32} art={<RussiaFlagArt />} />

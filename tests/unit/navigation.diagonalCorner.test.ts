@@ -1,11 +1,11 @@
+import { CANVAS_H, CANVAS_W } from "@/features/retro-office/core/constants";
 import { describe, expect, it } from "vitest";
 
 import { astar } from "@/features/retro-office/core/navigation";
 
 // Grid constants (must match navigation.ts)
 const GRID_CELL = 25;
-const CANVAS_W = 1800;
-const CANVAS_H = 720;
+
 const GRID_COLS = Math.ceil(CANVAS_W / GRID_CELL);
 const GRID_ROWS = Math.ceil(CANVAS_H / GRID_CELL);
 

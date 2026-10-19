@@ -14,13 +14,12 @@ server/claude-code/  ── adaptador (127.0.0.1:18790, WebSocket, só métodos 
    ▼
 src/features/tv/  ── tela /tv (Next.js, navegador do Mac → TV pelo HDMI)
    useAgentarioFeed   conexão direta ao adaptador (reconexão, gerações)
-   layout/            geradores: acesas | baias | andares (plantas por andar), encaixe na grade,
+   layout/            gerador do escritório (um andar, todas as salas), encaixe na grade,
                       validação de navegação (mesma grade e A* da cena)
    movement.ts        quem vai para a mesa, lazer, visita ao Friol, espera
-   floorTransit.ts    troca de andar pelo elevador
    demo.ts            modo demonstração
    decoration.ts      decoração/móveis/paredes da edição (+ rota /api/agentario/decoracao)
-   TvEnvironment      pisos, placas, igreja, banheiro, auréola, bandeiras, elevadores
+   TvEnvironment      pisos, placas, igreja, banheiro, auréola, bandeiras
    │
    ▼
 src/features/retro-office/  ── cena 3D (Claw3D, MIT) em modo dirigido:

@@ -64,13 +64,10 @@ export function roomWalls(
 export const doorCenterX = (zone: Pick<Zone, "x" | "w">) =>
   zone.x + Math.floor((zone.w / 2 - DOOR_GAP / 2) / CELL) * CELL + DOOR_GAP / 2;
 
-/**
- * Sala de projeto com uma fileira de `cols` mesas. Fechada (paredes) ou baia aberta,
- * que é mais baixa por não precisar da folga das paredes.
- */
-export const projectRoomSize = (cols: number, open: boolean) => ({
+/** Sala de projeto fechada com uma fileira de `cols` mesas. */
+export const projectRoomSize = (cols: number) => ({
   w: 2 * CELL + cols * DESK_STEP_X,
-  h: open ? 4 * CELL : 8 * CELL,
+  h: 8 * CELL,
 });
 
 /**
@@ -83,9 +80,8 @@ export function projectRoomContents(
   seatsNeeded: number,
   make: (item: Item) => FurnitureItem,
 ): { furniture: FurnitureItem[]; seats: Spot[]; fiscal: Spot } {
-  // Fechada: parede (0), lugares (1–2), mesas (3–5), corredor até a porta (6), parede (7).
-  // Baia aberta: lugares (0), mesas (1–3).
-  const deskRow = zone.open ? 1 : 3;
+  // Parede (0), lugares (1–2), mesas (3–5), corredor até a porta (6), parede (7).
+  const deskRow = 3;
   const furniture: FurnitureItem[] = [];
   const seats: Spot[] = [];
   for (let col = 0; col < cols; col += 1) {
@@ -98,12 +94,12 @@ export function projectRoomContents(
   for (let extra = seats.length; extra < seatsNeeded; extra += 1) {
     const i = extra - cols;
     seats.push({
-      ...cell(zone, 1 + (i % standCols), Math.max(zone.open ? 0 : 1, standRow - Math.floor(i / standCols))),
+      ...cell(zone, 1 + (i % standCols), Math.max(1, standRow - Math.floor(i / standCols))),
       facing: 0,
       pose: "stand",
     });
   }
-  const fiscal: Spot = { ...cell(zone, zone.w / CELL - 2, zone.open ? 0 : 1), facing: 0, pose: "stand" };
+  const fiscal: Spot = { ...cell(zone, zone.w / CELL - 2, 1), facing: 0, pose: "stand" };
   return { furniture, seats, fiscal };
 }
 

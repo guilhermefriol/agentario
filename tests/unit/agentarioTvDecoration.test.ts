@@ -59,7 +59,7 @@ describe("decoração", () => {
   });
 
   const room = { id: "p-0123456789", label: "Projeto", lit: true };
-  const demand = { seatsByRoom: { "p-0123456789": 2 }, population: 5 };
+  const demand = { seatsByRoom: { "p-0123456789": 2 }, colsByRoom: { "p-0123456789": 2 }, population: 5 };
 
   it("parede que fecha a porta gera problema; o fail-safe a descarta e mantém tudo alcançável", () => {
     const blocking: Decoration = {
@@ -70,9 +70,9 @@ describe("decoração", () => {
         "lazer:descanso": { items: [{ type: "plant", slot: 3 }], walls: [] },
       },
     };
-    const unsafe = buildLayout("acesas", [room], demand, { decoration: blocking, blockingZones: "all" });
+    const unsafe = buildLayout([room], demand, { decoration: blocking, blockingZones: "all" });
     expect(layoutIssues(unsafe).length).toBeGreaterThan(0);
-    const { layout, dropped } = buildSafeLayout("acesas", [room], demand, blocking);
+    const { layout, dropped } = buildSafeLayout([room], demand, blocking);
     expect(dropped).toContain("centro");
     expect(layoutIssues(layout)).toEqual([]);
     // O que não bloqueia continua.
@@ -81,16 +81,14 @@ describe("decoração", () => {
 
   it("móvel grande que não atrapalha entra", () => {
     const decoration: Decoration = { version: 2, zones: { "lazer:igreja": { items: [{ type: "plant", slot: 2 }], walls: [] } } };
-    for (const kind of ["acesas", "baias", "andares"] as const) {
-      const { layout, dropped } = buildSafeLayout(kind, [room], demand, decoration);
-      expect(dropped).toEqual([]);
-      expect(layoutIssues(layout)).toEqual([]);
-    }
+    const { layout, dropped } = buildSafeLayout([room], demand, decoration);
+    expect(dropped).toEqual([]);
+    expect(layoutIssues(layout)).toEqual([]);
   });
 
   it("itens ficam dentro da sala e não mudam a navegação", () => {
     const rooms = [{ id: "p-0123456789", label: "Projeto", lit: true }];
-    const layout = buildLayout("acesas", rooms, { seatsByRoom: { "p-0123456789": 2 }, population: 5 });
+    const layout = buildLayout(rooms, { seatsByRoom: { "p-0123456789": 2 }, colsByRoom: {}, population: 5 });
     const types = Object.keys(DECOR_TYPES) as Array<keyof typeof DECOR_TYPES>;
     const decoration: Decoration = {
       version: 2,

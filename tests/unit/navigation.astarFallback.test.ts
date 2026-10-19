@@ -7,6 +7,7 @@
  * can treat an empty array as "no path found" and keep the agent still.
  */
 
+import { CANVAS_H, CANVAS_W } from "@/features/retro-office/core/constants";
 import { describe, expect, it } from "vitest";
 
 import { astar, buildNavGrid } from "@/features/retro-office/core/navigation";
@@ -42,12 +43,11 @@ function setCell(
 
 // ---------------------------------------------------------------------------
 // The real nav grid dimensions used by astar() internally.
-// CANVAS_W = 1800, CANVAS_H = 720, GRID_CELL = 25
-// GRID_COLS = ceil(1800/25) = 72, GRID_ROWS = ceil(720/25) = 29
+// GRID_CELL = 25; colunas e linhas seguem o canvas da cena.
 // ---------------------------------------------------------------------------
 const GRID_CELL = 25;
-const GRID_COLS = 72; // Math.ceil(1800 / 25)
-const GRID_ROWS = 29; // Math.ceil(720 / 25)
+const GRID_COLS = Math.ceil(CANVAS_W / 25);
+const GRID_ROWS = Math.ceil(CANVAS_H / 25);
 
 // ---------------------------------------------------------------------------
 // Tests

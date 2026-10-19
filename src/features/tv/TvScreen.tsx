@@ -7,29 +7,16 @@ import { toOfficeAgents, type AgentarioAgent } from "@/features/tv/agentarioAgen
 import { decorableZones, type Decoration } from "@/features/tv/decoration";
 import { DecorationPanel, useDecoration } from "@/features/tv/DecorationPanel";
 import { applyDemo } from "@/features/tv/demo";
-import {
-  flatScene,
-  planFloorScene,
-  type FloorScene,
-  type FloorTransitState,
-} from "@/features/tv/floorTransit";
-import type { Layout } from "@/features/tv/layout";
-import {
-  buildLayout,
-  buildSafeLayout,
-  layoutIssues,
-  LAYOUT_KINDS,
-  type LayoutKind,
-} from "@/features/tv/layout";
+import { buildLayout, buildSafeLayout, layoutIssues } from "@/features/tv/layout";
 import { LEISURE_ROOMS } from "@/features/tv/layout/rooms";
 import { assignTargets, layoutDemand } from "@/features/tv/movement";
 import { configureSceneFonts } from "@/features/tv/sceneText";
 import { TvEnvironment } from "@/features/tv/TvEnvironment";
+import { useAgentarioFeed, type AgentarioFeedStatus } from "@/features/tv/useAgentarioFeed";
+import { fitCamera, isNight } from "@/features/tv/view";
 
 // Antes de qualquer texto 3D: fonte local (sem CDN).
 configureSceneFonts();
-import { useAgentarioFeed, type AgentarioFeedStatus } from "@/features/tv/useAgentarioFeed";
-import { fitCamera, isNight } from "@/features/tv/view";
 
 const STATUS_LABELS: Record<AgentarioFeedStatus, string> = {
   connecting: "Conectando…",
@@ -45,14 +32,9 @@ const STATUS_COLORS: Record<AgentarioFeedStatus, string> = {
   "wrong-adapter": "bg-red-500",
 };
 
-const LAYOUT_LABELS: Record<LayoutKind, string> = {
-  acesas: "Só acesas",
-  baias: "Baias",
-  andares: "Andares",
-};
-
-const LAYOUT_STORAGE_KEY = "agentario.layout";
 const CARD_TIMEOUT_MS = 15_000;
+const DAILY_RELOAD_HOUR = 4;
+const CONTEXT_LOST_RELOAD_MS = 5_000;
 
 const KIND_LABELS: Record<AgentarioAgent["kind"], string> = {
   owner: "Deus Onipotente",
@@ -101,24 +83,6 @@ function AgentCard({ agent, onClose }: { agent: AgentarioAgent; onClose: () => v
     </div>
   );
 }
-const FLOOR_CYCLE_MS = 20_000;
-
-const readStoredLayout = (): LayoutKind | null => {
-  try {
-    const value = window.localStorage.getItem(LAYOUT_STORAGE_KEY);
-    return LAYOUT_KINDS.includes(value as LayoutKind) ? (value as LayoutKind) : null;
-  } catch {
-    return null;
-  }
-};
-
-const storeLayout = (kind: LayoutKind) => {
-  try {
-    window.localStorage.setItem(LAYOUT_STORAGE_KEY, kind);
-  } catch {
-    // Sem armazenamento (janela privada etc.): a escolha vale só nesta sessão.
-  }
-};
 
 // Relógio isolado: o tique de cada segundo não re-renderiza a cena.
 const Clock = memo(function Clock() {
@@ -140,7 +104,7 @@ const Clock = memo(function Clock() {
   );
 });
 
-/** Relógio da simulação (janelas de lazer, visitas e trânsito no elevador). */
+/** Relógio da simulação (janelas de lazer e visitas). */
 function useSimulationClock(stepMs: number) {
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
@@ -149,9 +113,6 @@ function useSimulationClock(stepMs: number) {
   }, [stepMs]);
   return now;
 }
-
-const DAILY_RELOAD_HOUR = 4;
-const CONTEXT_LOST_RELOAD_MS = 5_000;
 
 /**
  * Operação 24/7 na TV: recarrega a página se o contexto WebGL cair (GPU trocada, Mac
@@ -200,28 +161,14 @@ function useStableValue<T>(value: T): T {
   return useMemo(() => JSON.parse(key) as T, [key]);
 }
 
-/**
- * Andares: o trânsito no elevador depende do estado anterior, então avança fora do render
- * (num timer) a partir dos alvos atuais. Fora de "andares" a cena é imediata.
- */
-function useFloorScene(
-  layout: Layout,
-  targets: Record<string, AgentDirectedTarget>,
-  now: number,
-): FloorScene {
-  const [floors, setFloors] = useState<{ scene: FloorScene; state: FloorTransitState }>(() => ({
-    scene: { targets: {}, agentOf: {} },
-    state: {},
-  }));
-  useEffect(() => {
-    if (layout.kind !== "andares") return;
-    const timer = window.setTimeout(() => {
-      setFloors((previous) => planFloorScene(layout, targets, previous.state, now));
-    }, 0);
-    return () => window.clearTimeout(timer);
-  }, [layout, targets, now]);
-  return layout.kind === "andares" ? floors.scene : flatScene(targets);
-}
+const zoneLabel = (zoneId: string | null, rooms: Array<{ id: string; label: string }>) =>
+  !zoneId
+    ? "corredor"
+    : zoneId === "centro"
+      ? "Sala do Friol"
+      : (LEISURE_ROOMS.find((room) => `lazer:${room.id}` === zoneId)?.label ??
+        rooms.find((room) => room.id === zoneId)?.label ??
+        zoneId);
 
 export function TvScreen() {
   const feed = useAgentarioFeed();
@@ -229,41 +176,27 @@ export function TvScreen() {
   useSelfHealing();
   const now = useSimulationClock(1000);
   const [demo, setDemo] = useState(false);
-  const [layoutChoice, setLayoutChoice] = useState<LayoutKind | null>(null);
   const [selected, setSelected] = useState<{ id: string; at: number } | null>(null);
   const [editing, setEditing] = useState(false);
   const decor = useDecoration();
 
-  // URL (?demo=1, ?layout=) e escolha salva neste navegador, depois de montar.
+  // ?demo=1 liga a demonstração (não fica salvo).
   useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    const fromUrl = params.get("layout");
     const timer = window.setTimeout(() => {
-      if (params.get("demo") === "1") setDemo(true);
-      if (LAYOUT_KINDS.includes(fromUrl as LayoutKind)) setLayoutChoice(fromUrl as LayoutKind);
-      else setLayoutChoice(readStoredLayout());
+      if (new URLSearchParams(window.location.search).get("demo") === "1") setDemo(true);
     }, 0);
     return () => window.clearTimeout(timer);
   }, []);
 
-  const layoutKind: LayoutKind = layoutChoice ?? feed.config?.layout ?? "acesas";
-  const chooseLayout = useCallback((kind: LayoutKind) => {
-    setLayoutChoice(kind);
-    storeLayout(kind);
-  }, []);
-
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
-      const index = ["1", "2", "3"].indexOf(event.key);
-      if (index >= 0) chooseLayout(LAYOUT_KINDS[index]);
       if (event.key === "Escape") setSelected(null);
-      if ((event.key === "e" || event.key === "E") && !(event.target instanceof HTMLSelectElement)) {
-        setEditing((value) => !value);
-      }
+      const typing = event.target instanceof HTMLSelectElement || event.target instanceof HTMLInputElement;
+      if ((event.key === "e" || event.key === "E") && !typing) setEditing((value) => !value);
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [chooseLayout]);
+  }, []);
 
   // Demo muda a cada minuto; o resto da cena só reage a mudanças reais.
   const demoWindow = Math.floor(now / 60_000);
@@ -272,112 +205,53 @@ export function TvScreen() {
     [demo, demoWindow, feed.rooms, feed.agents],
   );
 
-  const demand = useStableValue(useMemo(() => {
-    const raw = layoutDemand(view.agents);
-    // Arredonda a espera em blocos de 10 para não refazer a planta a cada pessoa.
-    return { ...raw, population: Math.ceil(raw.population / 10) * 10 };
-  }, [view.agents]));
+  const demand = useStableValue(
+    useMemo(() => {
+      const raw = layoutDemand(view.agents);
+      // Arredonda a espera em blocos de 10 para não refazer a planta a cada pessoa.
+      return { ...raw, population: Math.ceil(raw.population / 10) * 10 };
+    }, [view.agents]),
+  );
   const layoutRooms = useStableValue(view.rooms);
   const safe = useMemo(
-    () => buildSafeLayout(layoutKind, layoutRooms, demand, decor.decoration),
-    [layoutKind, layoutRooms, demand, decor.decoration],
+    () => buildSafeLayout(layoutRooms, demand, decor.decoration),
+    [layoutRooms, demand, decor.decoration],
   );
   const layout = safe.layout;
-  // A edição só é aceita se nenhum dos 3 layouts (com as salas de agora) ficar com algo inalcançável.
+  // A edição só é aceita se nada ficar inalcançável com as salas de agora.
   const validateDecoration = useCallback(
     (next: Decoration) => {
-      for (const kind of LAYOUT_KINDS) {
-        const issues = layoutIssues(buildLayout(kind, layoutRooms, demand, { decoration: next, blockingZones: "all" }));
-        if (issues.length > 0) {
-          const zone = issues[0].zoneId;
-          const label = !zone
-            ? "corredor"
-            : zone === "centro"
-              ? "Sala do Friol"
-              : (LEISURE_ROOMS.find((room) => `lazer:${room.id}` === zone)?.label ??
-                layoutRooms.find((room) => room.id === zone)?.label ??
-                zone);
-          return `Recusado: no layout "${LAYOUT_LABELS[kind]}" isso bloquearia a passagem (${label}).`;
-        }
-      }
-      return null;
+      const issues = layoutIssues(buildLayout(layoutRooms, demand, { decoration: next, blockingZones: "all" }));
+      if (issues.length === 0) return null;
+      return `Recusado: isso bloquearia a passagem (${zoneLabel(issues[0].zoneId, layoutRooms)}).`;
     },
     [layoutRooms, demand],
   );
 
   const movementNow = Math.floor(now / 5000) * 5000;
-  const targets = useMemo(
-    () =>
-      assignTargets({
-        layout,
-        rooms: view.rooms,
-        agents: view.agents,
-        now: movementNow,
-        demo,
-        initialIds: feed.initialIds ?? undefined,
-      }),
-    [layout, view.rooms, view.agents, movementNow, demo, feed.initialIds],
+  const targets = useStableValue<Record<string, AgentDirectedTarget>>(
+    useMemo(
+      () =>
+        assignTargets({
+          layout,
+          rooms: view.rooms,
+          agents: view.agents,
+          now: movementNow,
+          demo,
+          initialIds: feed.initialIds ?? undefined,
+        }),
+      [layout, view.rooms, view.agents, movementNow, demo, feed.initialIds],
+    ),
   );
-  const scene = useStableValue(useFloorScene(layout, targets, now));
-  const sceneTargets = useStableValue<Record<string, AgentDirectedTarget>>(scene.targets);
+  const officeAgents = useMemo(() => toOfficeAgents(view.agents), [view.agents]);
 
-  const officeAgents = useMemo(() => {
-    const byId = new Map(toOfficeAgents(view.agents).map((agent) => [agent.id, agent]));
-    return Object.entries(scene.agentOf).flatMap(([sceneId, agentId]) => {
-      const agent = byId.get(agentId);
-      return agent ? [{ ...agent, id: sceneId }] : [];
-    });
-  }, [scene.agentOf, view.agents]);
-
-  // Andares: mostra um andar por vez, priorizando os que têm sala acesa, e o terraço.
-  const floorCycle = Math.floor(now / FLOOR_CYCLE_MS);
-  const shownPlan = useMemo(() => {
-    if (layout.kind !== "andares" || layout.floorPlans.length === 0) return null;
-    const litFloors = new Set(layout.zones.filter((z) => z.kind === "project" && z.lit).map((z) => z.floor));
-    const terrace = layout.floorPlans[layout.floorPlans.length - 1];
-    const candidates = [...layout.floorPlans.filter((plan) => litFloors.has(plan.floor)), terrace];
-    return candidates[floorCycle % candidates.length];
-  }, [layout, floorCycle]);
-
-  const sceneAgents = useMemo(
-    () =>
-      shownPlan
-        ? officeAgents.filter((agent) => agent.id.endsWith(`@${shownPlan.floor}`))
-        : officeAgents,
-    [officeAgents, shownPlan],
-  );
-  const shownTargets = useMemo(() => {
-    if (!shownPlan) return sceneTargets;
-    const filtered: Record<string, AgentDirectedTarget> = {};
-    for (const agent of sceneAgents) {
-      const target = sceneTargets[agent.id];
-      if (target) filtered[agent.id] = target;
-    }
-    return filtered;
-  }, [sceneTargets, sceneAgents, shownPlan]);
-
-  const shownZones = shownPlan ? shownPlan.zones : layout.zones;
-  const furniture = shownPlan ? shownPlan.furniture : layout.furniture;
-
-  const camera = useMemo(
-    () => fitCamera(shownPlan ? shownPlan.bounds : layout.bounds, viewport),
-    [layout.bounds, shownPlan, viewport],
-  );
-  const environment = useMemo(
-    () => <TvEnvironment layout={layout} plan={shownPlan} />,
-    [layout, shownPlan],
-  );
+  const camera = useMemo(() => fitCamera(layout.bounds, viewport), [layout.bounds, viewport]);
+  const environment = useMemo(() => <TvEnvironment layout={layout} />, [layout]);
 
   const working = view.agents.filter((agent) => agent.status === "working").length;
   const litRooms = view.rooms.filter((room) => room.lit).length;
-  const hiddenLabels = layout.hiddenRooms
-    .map((id) => view.rooms.find((room) => room.id === id)?.label)
-    .filter((label): label is string => Boolean(label));
   const night = feed.config ? isNight(feed.config.night, new Date(now)) : false;
-  const selectAgent = useCallback(
-    (sceneId: string) => setSelected({ id: scene.agentOf[sceneId] ?? sceneId, at: Date.now() }),
-    [scene.agentOf],
-  );
+  const selectAgent = useCallback((id: string) => setSelected({ id, at: Date.now() }), []);
   const selectedAgent =
     selected && now - selected.at < CARD_TIMEOUT_MS
       ? (view.agents.find((agent) => agent.id === selected.id) ?? null)
@@ -386,13 +260,13 @@ export function TvScreen() {
   return (
     <main className="relative h-screen w-screen overflow-hidden bg-black">
       <RetroOffice3D
-        agents={sceneAgents}
+        agents={officeAgents}
         readOnly
         storageNamespace="agentario-tv"
-        officeTitle={shownPlan ? shownPlan.label : "Escritório"}
+        officeTitle="Escritório"
         officeTitleLoaded
-        furniture={furniture}
-        targetByAgentId={shownTargets}
+        furniture={layout.furniture}
+        targetByAgentId={targets}
         cameraOverride={camera}
         customEnvironment={environment}
         onAgentChatSelect={selectAgent}
@@ -400,7 +274,7 @@ export function TvScreen() {
       {selectedAgent ? <AgentCard agent={selectedAgent} onClose={() => setSelected(null)} /> : null}
       {editing ? (
         <DecorationPanel
-          zones={decorableZones(layout, shownZones)}
+          zones={decorableZones(layout)}
           decoration={decor.decoration}
           error={decor.error}
           dropped={safe.dropped}
@@ -438,37 +312,17 @@ export function TvScreen() {
           <Clock />
         </div>
       </header>
-      {hiddenLabels.length > 0 ? (
-        <footer
-          className="pointer-events-none absolute inset-x-0 bottom-12 truncate px-8 text-center text-base text-white/45"
-          data-testid="dark-rooms"
-        >
-          Apagadas ({hiddenLabels.length}): {hiddenLabels.join(" · ")}
-        </footer>
-      ) : null}
-      <nav className="absolute bottom-3 right-4 flex gap-1 rounded-full bg-black/60 p-1 text-sm" data-testid="layout-switch">
+      <nav className="absolute bottom-3 right-4 flex gap-1 rounded-full bg-black/60 p-1 text-sm">
         <button
           type="button"
           onClick={() => setEditing((value) => !value)}
           data-active={editing}
+          data-testid="edit-toggle"
           className={`rounded-full px-3 py-1 ${editing ? "bg-amber-400 text-black" : "text-white/70"}`}
         >
           ✎ Editar
         </button>
-        {LAYOUT_KINDS.map((kind, index) => (
-          <button
-            key={kind}
-            type="button"
-            onClick={() => chooseLayout(kind)}
-            data-active={kind === layoutKind}
-            className={`rounded-full px-3 py-1 ${kind === layoutKind ? "bg-white/90 text-black" : "text-white/70"}`}
-          >
-            {index + 1} · {LAYOUT_LABELS[kind]}
-          </button>
-        ))}
       </nav>
     </main>
   );
 }
-
-export type { AgentarioAgent };

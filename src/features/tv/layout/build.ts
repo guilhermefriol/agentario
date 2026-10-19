@@ -1,4 +1,6 @@
+import { CANVAS_H, CANVAS_W } from "@/features/retro-office/core/constants";
 import type { FurnitureItem } from "@/features/retro-office/core/types";
+import { decorationItems, EMPTY_DECORATION, type Decoration } from "@/features/tv/decoration";
 import {
   CELL,
   LEISURE_H,
@@ -12,38 +14,28 @@ import {
   projectRoomSize,
   roomWalls,
 } from "@/features/tv/layout/rooms";
-import { decorationItems, EMPTY_DECORATION, type Decoration } from "@/features/tv/decoration";
 import { snapSpots } from "@/features/tv/layout/snap";
-import type {
-  Layout,
-  LayoutDemand,
-  LayoutKind,
-  LayoutRoom,
-  LeisureId,
-  Spot,
-  Zone,
-} from "@/features/tv/layout/types";
+import type { Layout, LayoutDemand, LayoutRoom, LeisureId, Spot, Zone } from "@/features/tv/layout/types";
 
-export const CANVAS = 1800;
 export const MARGIN = 2 * CELL;
 export const GAP = CELL;
-const USABLE = CANVAS - 2 * MARGIN;
+const ROW_CORRIDOR = 3 * CELL; // a folga das paredes fecha um vão de uma célula
+const USABLE = CANVAS_W - 2 * MARGIN;
+const MAX_COLS = 4;
 
 /** Coloca retângulos da esquerda para a direita, quebrando a linha na largura útil. */
-export function flow(sizes: Array<{ w: number; h: number }>, top: number, rowGap = GAP) {
-  const positions: Array<{ x: number; y: number; row: number }> = [];
+export function flow(sizes: Array<{ w: number; h: number }>, top: number, rowGap: number) {
+  const positions: Array<{ x: number; y: number }> = [];
   let x = MARGIN;
   let y = top;
-  let row = 0;
   let rowH = 0;
   for (const size of sizes) {
     if (x > MARGIN && x + size.w > MARGIN + USABLE) {
       x = MARGIN;
       y += rowH + rowGap;
-      row += 1;
       rowH = 0;
     }
-    positions.push({ x, y, row });
+    positions.push({ x, y });
     x += size.w + GAP;
     rowH = Math.max(rowH, size.h);
   }
@@ -66,18 +58,20 @@ export function waitingSpots(count: number, top: number): { spots: Spot[]; botto
   return { spots, bottom: top + rows * CELL };
 }
 
-/** Fileira com a sala do Friol e as 5 salas de lazer, portas para o corredor de cima. */
+/** Fileira centralizada com a sala do Friol e as 5 salas de lazer, portas para o corredor de cima. */
 export function bottomRow(top: number) {
   const zones: Zone[] = [];
   const furniture: FurnitureItem[] = [];
   const leisure = {} as Record<LeisureId, Spot[]>;
   const ids = ["centro", ...LEISURE_ROOMS.map((room) => room.id)] as const;
+  const rowWidth = ids.length * LEISURE_W + (ids.length - 1) * GAP;
+  const left = MARGIN + Math.floor((USABLE - rowWidth) / 2 / CELL) * CELL;
   let center: ReturnType<typeof centerContents> | null = null;
   let flags: Layout["flags"] = null;
   let centerDoor = { x: 0, y: 0 };
 
   ids.forEach((id, index) => {
-    const x = MARGIN + index * (LEISURE_W + GAP);
+    const x = left + index * (LEISURE_W + GAP);
     const doorX = doorCenterX({ x, w: LEISURE_W });
     const zone: Zone = {
       id: id === "centro" ? "centro" : `lazer:${id}`,
@@ -88,8 +82,6 @@ export function bottomRow(top: number) {
       w: LEISURE_W,
       h: LEISURE_H,
       lit: true,
-      open: false,
-      floor: 0,
       door: { x: doorX, y: top - CELL / 2 },
     };
     const make = itemFactory(zone.id);
@@ -164,10 +156,6 @@ export function snapLayoutSpots(
   };
 }
 
-/**
- * Monta o layout plano ("acesas" ou "baias"): salas de projeto em cima, corredor com a
- * área de espera e, embaixo, a sala do Friol e o lazer. Determinístico para a mesma entrada.
- */
 export type DecorationInput = {
   decoration: Decoration;
   /** Zonas cujos itens que bloqueiam passagem (e paredes) entram; o resto entra só com o que não bloqueia. */
@@ -176,42 +164,33 @@ export type DecorationInput = {
 
 export const NO_DECORATION: DecorationInput = { decoration: EMPTY_DECORATION, blockingZones: "none" };
 
-export function buildFlatLayout(
-  kind: Exclude<LayoutKind, "andares">,
+const colsFor = (room: LayoutRoom, demand: LayoutDemand, maxCols: number) =>
+  Math.min(Math.max(demand.colsByRoom[room.id] ?? 1, 1), maxCols);
+
+/**
+ * O escritório: um andar com todas as salas (acesas e apagadas) em ordem estável, um corredor com
+ * a área de espera e, embaixo, a sala do Friol e o lazer. A largura das salas vem dos funcionários
+ * cadastrados; se não couber, o teto de mesas por sala diminui até caber (quem sobra fica de pé).
+ */
+export function buildOfficeLayout(
   rooms: LayoutRoom[],
   demand: LayoutDemand,
   decor: DecorationInput = NO_DECORATION,
 ): Layout {
-  const closed = buildFlat(kind, rooms, demand, kind === "baias", decor);
-  // Muitas salas acesas (ex.: demonstração) não cabem fechadas: usa baias abertas.
-  if (kind === "acesas" && closed.bounds.maxY >= CANVAS) return buildFlat(kind, rooms, demand, true, decor);
-  return closed;
-}
+  const waitingRows = Math.ceil(Math.max(demand.population, 1) / (Math.floor(USABLE / CELL) - 2));
+  const below = CELL + waitingRows * CELL + 2 * CELL + LEISURE_H + MARGIN;
+  const roomsBottom = (maxCols: number) =>
+    flow(rooms.map((room) => projectRoomSize(colsFor(room, demand, maxCols))), MARGIN, ROW_CORRIDOR).bottom;
+  const maxCols = [MAX_COLS, 3, 2, 1].find((cols) => roomsBottom(cols) + below <= CANVAS_H) ?? 1;
 
-function buildFlat(
-  kind: Exclude<LayoutKind, "andares">,
-  rooms: LayoutRoom[],
-  demand: LayoutDemand,
-  open: boolean,
-  decor: DecorationInput,
-): Layout {
-  const shown = kind === "acesas" ? rooms.filter((room) => room.lit) : rooms;
-  const hiddenRooms = kind === "acesas" ? rooms.filter((room) => !room.lit).map((room) => room.id) : [];
-
-  const grids = shown.map((room) => {
-    const need = Math.max(demand.seatsByRoom[room.id] ?? 0, 1);
-    return { cols: open ? 2 : Math.min(Math.max(need, 2), 5), need };
-  });
-  const sizes = grids.map((grid) => projectRoomSize(grid.cols, open));
-  // Salas fechadas precisam de corredor (a folga das paredes fecha um vão de uma célula).
-  const placed = flow(sizes, MARGIN, open ? GAP : 3 * CELL);
-
+  const sizes = rooms.map((room) => projectRoomSize(colsFor(room, demand, maxCols)));
+  const placed = flow(sizes, MARGIN, ROW_CORRIDOR);
   const zones: Zone[] = [];
   const furniture: FurnitureItem[] = [];
   const seatsByRoom: Record<string, Spot[]> = {};
   const fiscalByRoom: Record<string, Spot> = {};
 
-  shown.forEach((room, index) => {
+  rooms.forEach((room, index) => {
     const { x, y } = placed.positions[index];
     const { w, h } = sizes[index];
     const zone: Zone = {
@@ -223,14 +202,13 @@ function buildFlat(
       w,
       h,
       lit: room.lit,
-      open,
-      floor: 0,
-      door: { x: open ? x + w / 2 : doorCenterX({ x, w }), y: y + h + CELL / 2 },
+      door: { x: doorCenterX({ x, w }), y: y + h + CELL / 2 },
     };
     const make = itemFactory(room.id);
     zones.push(zone);
-    if (!open) furniture.push(...roomWalls(zone, "bottom", make));
-    const contents = projectRoomContents(zone, grids[index].cols, grids[index].need, make);
+    furniture.push(...roomWalls(zone, "bottom", make));
+    const need = Math.max(demand.seatsByRoom[room.id] ?? 0, 1);
+    const contents = projectRoomContents(zone, colsFor(room, demand, maxCols), need, make);
     furniture.push(...contents.furniture);
     seatsByRoom[room.id] = contents.seats;
     fiscalByRoom[room.id] = contents.fiscal;
@@ -248,15 +226,13 @@ function buildFlat(
     { seatsByRoom, fiscalByRoom, leisure: bottom.leisure, center: bottom.center, waiting: waiting.spots },
     [bottom.center.door],
   );
+  // Limites recortados ao conteúdo (a câmera enquadra só o que existe).
+  const maxX = Math.max(...zones.map((zone) => zone.x + zone.w));
   return {
-    kind,
     furniture,
-    bounds: { minX: 0, minY: 0, maxX: CANVAS, maxY: bottom.bottom + MARGIN },
+    bounds: { minX: 0, minY: 0, maxX: Math.min(CANVAS_W, maxX + MARGIN), maxY: bottom.bottom + MARGIN },
     zones,
     ...parts,
-    hiddenRooms,
     flags: bottom.flags,
-    floors: 1,
-    floorPlans: [],
   };
 }

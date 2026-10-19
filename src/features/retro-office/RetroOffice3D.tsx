@@ -914,7 +914,8 @@ function buildDirectedRenderAgent(
     targetY: ty,
     path: atTarget ? [] : planPath(spawn.x, spawn.y, tx, ty),
     frame: 0,
-    walkSpeed: WALK_SPEED * (0.85 + Math.random() * 0.3),
+    // Plantas da TV são grandes: no modo dirigido anda-se no dobro da velocidade.
+    walkSpeed: WALK_SPEED * 2 * (0.85 + Math.random() * 0.3),
     phaseOffset: Math.random() * Math.PI * 2,
     state: atTarget ? "standing" : "walking",
     facing: target?.facing ?? 0,

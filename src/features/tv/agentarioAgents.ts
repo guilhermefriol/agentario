@@ -122,7 +122,6 @@ export function sameRooms(a: AgentarioRoom[], b: AgentarioRoom[]): boolean {
 }
 
 export type AgentarioConfig = {
-  layout: "acesas" | "baias" | "andares";
   night: { enabled: boolean; from: string; to: string };
 };
 
@@ -130,13 +129,8 @@ const HHMM = /^([01]\d|2[0-3]):[0-5]\d$/;
 
 /** Lê `agentario.config` (só preferências de exibição). */
 export function parseAgentarioConfig(payload: unknown): AgentarioConfig {
-  const layout =
-    isRecord(payload) && (payload.layout === "baias" || payload.layout === "andares")
-      ? payload.layout
-      : "acesas";
   const night = isRecord(payload) && isRecord(payload.night) ? payload.night : {};
   return {
-    layout,
     night: {
       enabled: night.enabled === true,
       from: typeof night.from === "string" && HHMM.test(night.from) ? night.from : "22:00",
