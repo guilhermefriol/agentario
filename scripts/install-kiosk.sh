@@ -19,6 +19,8 @@ if [ "$DRY_RUN" = 1 ]; then OUT_DIR="$(mktemp -d)"; fi
 xml_escape() { printf '%s' "$1" | sed -e 's/&/\&amp;/g' -e 's/</\&lt;/g' -e 's/>/\&gt;/g'; }
 
 write_plist() { # $1 label, $2 conteúdo de ProgramArguments, $3 extras
+  # Backup de um LaunchAgent anterior com o mesmo nome, antes de sobrescrever.
+  if [ "$DRY_RUN" = 0 ] && [ -f "$OUT_DIR/$1.plist" ]; then cp "$OUT_DIR/$1.plist" "$OUT_DIR/$1.plist.bak"; fi
   cat > "$OUT_DIR/$1.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
