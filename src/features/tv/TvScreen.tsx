@@ -150,6 +150,36 @@ function useSimulationClock(stepMs: number) {
   return now;
 }
 
+const DAILY_RELOAD_HOUR = 4;
+const CONTEXT_LOST_RELOAD_MS = 5_000;
+
+/**
+ * Operação 24/7 na TV: recarrega a página se o contexto WebGL cair (GPU trocada, Mac
+ * dormindo) e uma vez por dia de madrugada, para limpar qualquer vazamento acumulado.
+ */
+function useSelfHealing() {
+  useEffect(() => {
+    const loadedAt = Date.now();
+    let reloadTimer: number | null = null;
+    const scheduleReload = (delayMs: number) => {
+      if (reloadTimer === null) reloadTimer = window.setTimeout(() => window.location.reload(), delayMs);
+    };
+    const onContextLost = (event: Event) => {
+      if (event.target instanceof HTMLCanvasElement) scheduleReload(CONTEXT_LOST_RELOAD_MS);
+    };
+    document.addEventListener("webglcontextlost", onContextLost, true);
+    const daily = window.setInterval(() => {
+      const now = new Date();
+      if (now.getHours() === DAILY_RELOAD_HOUR && Date.now() - loadedAt > 60 * 60 * 1000) scheduleReload(0);
+    }, 60_000);
+    return () => {
+      document.removeEventListener("webglcontextlost", onContextLost, true);
+      window.clearInterval(daily);
+      if (reloadTimer !== null) window.clearTimeout(reloadTimer);
+    };
+  }, []);
+}
+
 function useViewport() {
   const [viewport, setViewport] = useState({ width: 1920, height: 1080 });
   useEffect(() => {
@@ -196,6 +226,7 @@ function useFloorScene(
 export function TvScreen() {
   const feed = useAgentarioFeed();
   const viewport = useViewport();
+  useSelfHealing();
   const now = useSimulationClock(1000);
   const [demo, setDemo] = useState(false);
   const [layoutChoice, setLayoutChoice] = useState<LayoutKind | null>(null);

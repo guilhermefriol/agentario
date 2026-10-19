@@ -18,6 +18,18 @@ Abra `http://localhost:3210/tv` no navegador do Mac (a TV é o monitor HDMI). O 
 
 O painel só aceita conexões da própria máquina; acesso por rede não é suportado.
 
+### Na TV, sozinho no login (quiosque)
+
+```sh
+scripts/install-kiosk.sh --dry-run   # só gera e valida os LaunchAgents
+scripts/install-kiosk.sh             # build + instala (sem sudo)
+scripts/uninstall-kiosk.sh           # desfaz
+```
+
+Instala dois LaunchAgents do usuário: `com.agentario.tv` (painel em produção; reinicia se cair, com intervalo de 30 s) e `com.agentario.kiosk` (abre a `/tv` em tela cheia num navegador Chromium — Google Chrome, Chromium, Brave ou Edge — com perfil separado). Logs em `~/Library/Logs/agentario/`. A página se recarrega sozinha se o WebGL cair e todo dia às 04:00.
+
+Conferência rápida com o painel no ar: `npm run smoke:tv`.
+
 ## Na TV
 
 | Ação | Como |
