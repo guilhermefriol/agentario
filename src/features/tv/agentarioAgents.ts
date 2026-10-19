@@ -1,4 +1,5 @@
 import type { OfficeAgent } from "@/features/retro-office/core/types";
+import { sceneSafeText } from "@/features/tv/sceneText";
 
 export type AgentarioAgentKind = "owner" | "session" | "staff" | "intern" | "fiscal";
 
@@ -66,8 +67,8 @@ export function parseAgentarioAgents(payload: unknown): AgentarioAgent[] {
 export function toOfficeAgents(agents: AgentarioAgent[]): OfficeAgent[] {
   return agents.map((agent) => ({
     id: agent.id,
-    name: agent.name,
-    subtitle: agent.status === "working" ? agent.task ?? agent.room : agent.room,
+    name: sceneSafeText(agent.name),
+    subtitle: sceneSafeText(agent.status === "working" ? agent.task ?? agent.room : agent.room),
     status: agent.status,
     color: KIND_COLORS[agent.kind],
     item: KIND_ITEMS[agent.kind],

@@ -3,7 +3,6 @@
 // Uso: npm run tv            (desenvolvimento)
 //      npm run tv -- --prod  (usa o build de `npm run build`)
 import { spawn } from "node:child_process";
-import { mkdirSync } from "node:fs";
 import net from "node:net";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -12,7 +11,6 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const uiPort = Number.parseInt(process.env.PORT || "3210", 10);
 const adapterPort = Number.parseInt(process.env.AGENTARIO_ADAPTER_PORT || "18790", 10);
 const prod = process.argv.includes("--prod");
-const stateDir = path.join(root, ".agentario", "state");
 
 const portIsFree = (port) =>
   new Promise((resolve) => {
@@ -29,16 +27,11 @@ for (const [label, port] of [["interface", uiPort], ["adaptador", adapterPort]])
   }
 }
 
-mkdirSync(stateDir, { recursive: true });
 const env = {
   ...process.env,
   PORT: String(uiPort),
   AGENTARIO_ADAPTER_PORT: String(adapterPort),
   NEXT_PUBLIC_AGENTARIO_ADAPTER_URL: `ws://localhost:${adapterPort}`,
-  // Só para o /office legado; a tela /tv conecta direto no adaptador.
-  OPENCLAW_STATE_DIR: stateDir,
-  CLAW3D_GATEWAY_URL: `ws://localhost:${adapterPort}`,
-  CLAW3D_GATEWAY_ADAPTER_TYPE: "demo",
 };
 
 const children = [];

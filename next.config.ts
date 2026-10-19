@@ -12,15 +12,14 @@ const securityHeaders = [
       "img-src 'self' data: blob: http: https:",
       "font-src 'self' data: https:",
       "style-src 'self' 'unsafe-inline' https:",
-      // 'unsafe-eval' is required by Next.js dev mode (source maps, HMR).
-      // In production it is dropped — React and Three.js do not need eval.
+      // 'unsafe-eval' só no modo dev do Next (source maps, HMR). Em produção fica só
+      // 'wasm-unsafe-eval': a cena compila WebAssembly (decodificadores dos modelos 3D),
+      // sem liberar eval de JavaScript.
       ...(process.env.NODE_ENV !== "production"
-        ? ["script-src 'self' 'unsafe-inline' 'unsafe-eval' blob:"]
-        : ["script-src 'self' 'unsafe-inline' blob:"]),
-      // connect-src is intentionally broad: gateway URLs are user-configured
-      // at runtime and cannot be enumerated at build time.
-      // Restrict further when a fixed deployment target is known.
-      "connect-src 'self' ws: wss: http: https:",
+        ? ["script-src 'self' 'unsafe-inline' 'unsafe-eval' 'wasm-unsafe-eval' blob:"]
+        : ["script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval' blob:"]),
+      // O único destino é o adaptador local do Agentário (e o HMR do próprio servidor em dev).
+      "connect-src 'self' ws://localhost:* ws://127.0.0.1:* http://localhost:* http://127.0.0.1:*",
       "media-src 'self' blob: data: http: https:",
       "worker-src 'self' blob:",
       "object-src 'none'",

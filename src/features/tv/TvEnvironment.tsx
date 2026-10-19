@@ -10,6 +10,7 @@ import {
   RussiaFlagArt,
 } from "@/features/retro-office/scene/environment";
 import type { FloorPlan, Layout, Zone } from "@/features/tv/layout/types";
+import { sceneSafeText } from "@/features/tv/sceneText";
 
 const FLOOR_LIT = "#e9dcc4";
 const FLOOR_DARK = "#2a2622";
@@ -68,7 +69,7 @@ function ZoneLabel({ zone }: { zone: Zone }) {
         anchorX="center"
         anchorY="bottom"
       >
-        {zone.label}
+        {sceneSafeText(zone.label)}
       </Text>
     </Billboard>
   );
@@ -156,7 +157,7 @@ function FloorMarkers({ plan }: { plan: FloorPlan }) {
       </group>
       <Billboard position={[lx, 0.6, lz]}>
         <Text fontSize={0.3} color="#f5c542" outlineWidth={0.015} outlineColor="#16110a" anchorX="left">
-          {plan.label}
+          {sceneSafeText(plan.label)}
         </Text>
       </Billboard>
     </group>

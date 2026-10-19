@@ -1,24 +1,15 @@
 {
-  "name": "claw3d",
-  "version": "0.1.4",
+  "name": "agentario",
+  "version": "0.2.0",
   "private": true,
   "license": "MIT",
   "scripts": {
     "dev": "node server/index.js --dev",
-    "dev:https": "node server/index.js --dev --https",
-    "hermes-adapter": "node server/hermes-gateway-adapter.js",
-    "demo-gateway": "node server/demo-gateway-adapter.js",
     "build": "next build",
     "start": "node server/index.js",
     "lint": "eslint .",
-    "cleanup:ux-artifacts": "node scripts/cleanup-ux-artifacts.mjs",
-    "sync:gateway-client": "node scripts/sync-openclaw-gateway-client.ts",
-    "studio:setup": "node scripts/studio-setup.js",
-    "doctor": "node scripts/claw3doctor.mjs",
-    "smoke:dev-server": "node scripts/smoke-dev-server.mjs",
     "typecheck": "tsc --noEmit",
     "test": "vitest",
-    "e2e": "playwright test",
     "claude-adapter": "node server/claude-code/adapter.js",
     "tv": "node scripts/tv.mjs"
   },
@@ -39,6 +30,7 @@
     "remark-gfm": "^4.0.1",
     "tailwind-merge": "^3.4.0",
     "three": "^0.183.2",
+    "troika-three-text": "^0.52.4",
     "ws": "^8.18.3"
   },
   "devDependencies": {

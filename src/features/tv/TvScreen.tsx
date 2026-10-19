@@ -23,7 +23,11 @@ import {
 } from "@/features/tv/layout";
 import { LEISURE_ROOMS } from "@/features/tv/layout/rooms";
 import { assignTargets, layoutDemand } from "@/features/tv/movement";
+import { configureSceneFonts } from "@/features/tv/sceneText";
 import { TvEnvironment } from "@/features/tv/TvEnvironment";
+
+// Antes de qualquer texto 3D: fonte local (sem CDN).
+configureSceneFonts();
 import { useAgentarioFeed, type AgentarioFeedStatus } from "@/features/tv/useAgentarioFeed";
 import { fitCamera, isNight } from "@/features/tv/view";
 

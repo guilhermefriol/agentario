@@ -3,21 +3,13 @@ const https = require("node:https");
 const next = require("next");
 
 const { createAccessGate } = require("./access-gate");
-const { createGatewayProxy } = require("./gateway-proxy");
 const { assertPublicHostAllowed, resolveHosts } = require("./network-policy");
-const { loadUpstreamGatewaySettings } = require("./studio-settings");
 
 const resolvePort = () => {
   const raw = process.env.PORT?.trim() || "3000";
   const port = Number(raw);
   if (!Number.isFinite(port) || port <= 0) return 3000;
   return port;
-};
-
-const resolvePathname = (url) => {
-  const raw = typeof url === "string" ? url : "";
-  const idx = raw.indexOf("?");
-  return (idx === -1 ? raw : raw.slice(0, idx)) || "/";
 };
 
 const CERT_DIR = require("node:path").join(__dirname, "..", ".certs");
@@ -88,25 +80,13 @@ async function main() {
     token: process.env.STUDIO_ACCESS_TOKEN,
   });
 
-  const proxy = createGatewayProxy({
-    loadUpstreamSettings: async () => {
-      const settings = loadUpstreamGatewaySettings(process.env);
-      return { url: settings.url, token: settings.token, adapterType: settings.adapterType };
-    },
-    log: (message) => console.info(message),
-    logError: (message, error) => console.error(message, error),
-    allowWs: (req) => {
-      if (resolvePathname(req.url) !== "/api/gateway/ws") return false;
-      return true;
-    },
-    verifyClient: (info) => accessGate.allowUpgrade(info.req),
-  });
-
   await app.prepare();
+  // Só o upgrade do próprio Next (recarregamento em desenvolvimento). A tela /tv conecta
+  // direto no adaptador do Agentário; não há proxy de gateway.
   const handleUpgrade = app.getUpgradeHandler();
   const handleServerUpgrade = (req, socket, head) => {
-    if (resolvePathname(req.url) === "/api/gateway/ws") {
-      proxy.handleUpgrade(req, socket, head);
+    if (!accessGate.allowUpgrade(req)) {
+      socket.destroy();
       return;
     }
     handleUpgrade(req, socket, head);
@@ -179,7 +159,6 @@ async function main() {
   console.info(`Open in browser: ${browserUrl}`);
   if (useHttps) {
     console.info("HTTPS mode: self-signed cert in use. You may need to accept a browser security warning once.");
-    console.info(`Spotify redirect URI: ${browserUrl}/office`);
   }
 }
 
