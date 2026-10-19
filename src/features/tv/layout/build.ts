@@ -12,6 +12,7 @@ import {
   projectRoomSize,
   roomWalls,
 } from "@/features/tv/layout/rooms";
+import { decorationItems, EMPTY_DECORATION, type Decoration } from "@/features/tv/decoration";
 import { snapSpots } from "@/features/tv/layout/snap";
 import type {
   Layout,
@@ -167,14 +168,23 @@ export function snapLayoutSpots(
  * Monta o layout plano ("acesas" ou "baias"): salas de projeto em cima, corredor com a
  * área de espera e, embaixo, a sala do Friol e o lazer. Determinístico para a mesma entrada.
  */
+export type DecorationInput = {
+  decoration: Decoration;
+  /** Zonas cujos itens que bloqueiam passagem (e paredes) entram; o resto entra só com o que não bloqueia. */
+  blockingZones: ReadonlySet<string> | "all" | "none";
+};
+
+export const NO_DECORATION: DecorationInput = { decoration: EMPTY_DECORATION, blockingZones: "none" };
+
 export function buildFlatLayout(
   kind: Exclude<LayoutKind, "andares">,
   rooms: LayoutRoom[],
   demand: LayoutDemand,
+  decor: DecorationInput = NO_DECORATION,
 ): Layout {
-  const closed = buildFlat(kind, rooms, demand, kind === "baias");
+  const closed = buildFlat(kind, rooms, demand, kind === "baias", decor);
   // Muitas salas acesas (ex.: demonstração) não cabem fechadas: usa baias abertas.
-  if (kind === "acesas" && closed.bounds.maxY >= CANVAS) return buildFlat(kind, rooms, demand, true);
+  if (kind === "acesas" && closed.bounds.maxY >= CANVAS) return buildFlat(kind, rooms, demand, true, decor);
   return closed;
 }
 
@@ -183,6 +193,7 @@ function buildFlat(
   rooms: LayoutRoom[],
   demand: LayoutDemand,
   open: boolean,
+  decor: DecorationInput,
 ): Layout {
   const shown = kind === "acesas" ? rooms.filter((room) => room.lit) : rooms;
   const hiddenRooms = kind === "acesas" ? rooms.filter((room) => !room.lit).map((room) => room.id) : [];
@@ -229,6 +240,7 @@ function buildFlat(
   const bottom = bottomRow(waiting.bottom + 2 * CELL);
   zones.push(...bottom.zones);
   furniture.push(...bottom.furniture);
+  furniture.push(...decorationItems(zones, decor.decoration, { blockingZones: decor.blockingZones }));
 
   const parts = snapLayoutSpots(
     furniture,

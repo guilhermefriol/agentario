@@ -8,9 +8,11 @@ import {
   decorSlot,
   decorationItems,
   normalizeDecoration,
+  wallFits,
   DECOR_TYPES,
+  type Decoration,
 } from "@/features/tv/decoration";
-import { buildLayout } from "@/features/tv/layout";
+import { buildLayout, buildSafeLayout, layoutIssues } from "@/features/tv/layout";
 
 describe("decoração", () => {
   it("normaliza: descarta zonas, tipos, lugares e duplicados inválidos", () => {
@@ -28,18 +30,72 @@ describe("decoração", () => {
         "lazer:igreja": "x",
       },
     });
-    expect(clean).toEqual({ version: 1, zones: { centro: [{ type: "lamp", slot: 0 }, { type: "mug", slot: 2 }] } });
-    expect(() => normalizeDecoration({ version: 2, zones: {} })).toThrow();
+    // v1 (só itens por zona) é migrado para v2.
+    expect(clean).toEqual({
+      version: 2,
+      zones: { centro: { items: [{ type: "lamp", slot: 0 }, { type: "mug", slot: 2 }], walls: [] } },
+    });
+    expect(() => normalizeDecoration({ version: 3, zones: {} })).toThrow();
+  });
+
+  it("v2 aceita móveis grandes e paredes dentro dos limites", () => {
+    const clean = normalizeDecoration({
+      version: 2,
+      zones: {
+        centro: {
+          items: [{ type: "plant", slot: 1 }, { type: "wall", slot: 2 }],
+          walls: [
+            { c: 2, r: 3, len: 4, dir: "h" },
+            { c: 0, r: 3, len: 4, dir: "h" },
+            { c: 2, r: 3, len: 40, dir: "v" },
+            { c: 2, r: 3, len: 2, dir: "x" },
+          ],
+        },
+      },
+    });
+    expect(clean.zones.centro).toEqual({ items: [{ type: "plant", slot: 1 }], walls: [{ c: 2, r: 3, len: 4, dir: "h" }] });
+    expect(wallFits({ w: 250, h: 300 }, { c: 1, r: 1, len: 8, dir: "h" })).toBe(true);
+    expect(wallFits({ w: 250, h: 300 }, { c: 1, r: 1, len: 9, dir: "h" })).toBe(false);
+  });
+
+  const room = { id: "p-0123456789", label: "Projeto", lit: true };
+  const demand = { seatsByRoom: { "p-0123456789": 2 }, population: 5 };
+
+  it("parede que fecha a porta gera problema; o fail-safe a descarta e mantém tudo alcançável", () => {
+    const blocking: Decoration = {
+      version: 2,
+      zones: {
+        // Linha 1 logo abaixo da porta da sala do Friol, de ponta a ponta.
+        centro: { items: [{ type: "lamp", slot: 0 }], walls: [{ c: 1, r: 1, len: 8, dir: "h" }] },
+        "lazer:descanso": { items: [{ type: "plant", slot: 3 }], walls: [] },
+      },
+    };
+    const unsafe = buildLayout("acesas", [room], demand, { decoration: blocking, blockingZones: "all" });
+    expect(layoutIssues(unsafe).length).toBeGreaterThan(0);
+    const { layout, dropped } = buildSafeLayout("acesas", [room], demand, blocking);
+    expect(dropped).toContain("centro");
+    expect(layoutIssues(layout)).toEqual([]);
+    // O que não bloqueia continua.
+    expect(layout.furniture.some((item) => item._uid === "decor:centro:0")).toBe(true);
+  });
+
+  it("móvel grande que não atrapalha entra", () => {
+    const decoration: Decoration = { version: 2, zones: { "lazer:igreja": { items: [{ type: "plant", slot: 2 }], walls: [] } } };
+    for (const kind of ["acesas", "baias", "andares"] as const) {
+      const { layout, dropped } = buildSafeLayout(kind, [room], demand, decoration);
+      expect(dropped).toEqual([]);
+      expect(layoutIssues(layout)).toEqual([]);
+    }
   });
 
   it("itens ficam dentro da sala e não mudam a navegação", () => {
     const rooms = [{ id: "p-0123456789", label: "Projeto", lit: true }];
     const layout = buildLayout("acesas", rooms, { seatsByRoom: { "p-0123456789": 2 }, population: 5 });
     const types = Object.keys(DECOR_TYPES) as Array<keyof typeof DECOR_TYPES>;
-    const decoration = {
-      version: 1 as const,
+    const decoration: Decoration = {
+      version: 2,
       zones: Object.fromEntries(
-        layout.zones.map((zone) => [zone.id, types.slice(0, 8).map((type, slot) => ({ type, slot }))]),
+        layout.zones.map((zone) => [zone.id, { items: types.slice(0, 8).map((type, slot) => ({ type, slot })), walls: [] }]),
       ),
     };
     const items = decorationItems(layout.zones, decoration);
@@ -84,7 +140,7 @@ describe("rota de decoração", () => {
     const ok = await route.GET(new Request("http://localhost:3210/api/agentario/decoracao", { headers: { host: "localhost:3210" } }));
     expect(ok.status).toBe(200);
     const json = await ok.json();
-    expect(json.decoration).toEqual({ version: 1, zones: {} });
+    expect(json.decoration).toEqual({ version: 2, zones: {} });
     expect(typeof json.token).toBe("string");
     const bad = await route.GET(new Request("http://evil.example/api", { headers: { host: "evil.example" } }));
     expect(bad.status).toBe(403);
@@ -101,7 +157,7 @@ describe("rota de decoração", () => {
     expect((await put({ ...base, "x-agentario-token": token }, "{nao-json")).status).toBe(400);
     expect((await put({ ...base, "x-agentario-token": token })).status).toBe(200);
     const saved = JSON.parse(fs.readFileSync(path.join(dir, "decoracao.json"), "utf8"));
-    expect(saved).toEqual({ version: 1, zones: { centro: [{ type: "lamp", slot: 0 }] } });
+    expect(saved).toEqual({ version: 2, zones: { centro: { items: [{ type: "lamp", slot: 0 }], walls: [] } } });
     expect((await put({ ...base, "x-agentario-token": token })).status).toBe(200);
     expect(fs.existsSync(path.join(dir, "decoracao.json.bak"))).toBe(true);
     expect(fs.readdirSync(dir).filter((f) => f.endsWith(".tmp"))).toEqual([]);

@@ -1,11 +1,14 @@
 import type { FurnitureItem } from "@/features/retro-office/core/types";
+import { decorationItems } from "@/features/tv/decoration";
 import {
   CANVAS,
   GAP,
   MARGIN,
+  NO_DECORATION,
   bottomRow,
   snapLayoutSpots,
   waitingSpots,
+  type DecorationInput,
 } from "@/features/tv/layout/build";
 import {
   CELL,
@@ -36,7 +39,11 @@ const withFloor = (spots: Spot[], floor: number) => spots.map((spot) => ({ ...sp
  * uma por vez; só se troca de andar pelo elevador. Andares de projeto têm até duas fileiras
  * de salas com corredor; o terraço (andar mais alto) tem a sala do Friol, o lazer e a espera.
  */
-export function buildFloorsLayout(rooms: LayoutRoom[], demand: LayoutDemand): Layout {
+export function buildFloorsLayout(
+  rooms: LayoutRoom[],
+  demand: LayoutDemand,
+  decor: DecorationInput = NO_DECORATION,
+): Layout {
   const usable = CANVAS - 2 * MARGIN;
   const plans: FloorPlan[] = [];
   const seatsByRoom: Record<string, Spot[]> = {};
@@ -102,6 +109,7 @@ export function buildFloorsLayout(rooms: LayoutRoom[], demand: LayoutDemand): La
       top += rowH + CORRIDOR;
     });
     const elevator = { x: ELEVATOR.x, y: elevatorY };
+    furniture.push(...decorationItems(zones, decor.decoration, { blockingZones: decor.blockingZones }));
     const snapped = snapLayoutSpots(
       furniture,
       zones,
@@ -132,6 +140,9 @@ export function buildFloorsLayout(rooms: LayoutRoom[], demand: LayoutDemand): La
   const terrace = bottomRow(waiting.bottom + 2 * CELL);
   const terraceZones = terrace.zones.map((zone) => ({ ...zone, floor: terraceFloor }));
   const elevator = { x: ELEVATOR.x, y: MARGIN + CELL + CELL / 2 };
+  terrace.furniture.push(
+    ...decorationItems(terraceZones, decor.decoration, { blockingZones: decor.blockingZones }),
+  );
   const parts = snapLayoutSpots(
     terrace.furniture,
     terraceZones,

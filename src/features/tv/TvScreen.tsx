@@ -4,7 +4,7 @@ import { memo, useCallback, useEffect, useMemo, useState } from "react";
 import type { AgentDirectedTarget } from "@/features/retro-office/core/types";
 import { RetroOffice3D } from "@/features/retro-office/RetroOffice3D";
 import { toOfficeAgents, type AgentarioAgent } from "@/features/tv/agentarioAgents";
-import { decorableZones, decorationItems } from "@/features/tv/decoration";
+import { decorableZones, type Decoration } from "@/features/tv/decoration";
 import { DecorationPanel, useDecoration } from "@/features/tv/DecorationPanel";
 import { applyDemo } from "@/features/tv/demo";
 import {
@@ -14,7 +14,14 @@ import {
   type FloorTransitState,
 } from "@/features/tv/floorTransit";
 import type { Layout } from "@/features/tv/layout";
-import { buildLayout, LAYOUT_KINDS, type LayoutKind } from "@/features/tv/layout";
+import {
+  buildLayout,
+  buildSafeLayout,
+  layoutIssues,
+  LAYOUT_KINDS,
+  type LayoutKind,
+} from "@/features/tv/layout";
+import { LEISURE_ROOMS } from "@/features/tv/layout/rooms";
 import { assignTargets, layoutDemand } from "@/features/tv/movement";
 import { TvEnvironment } from "@/features/tv/TvEnvironment";
 import { useAgentarioFeed, type AgentarioFeedStatus } from "@/features/tv/useAgentarioFeed";
@@ -236,7 +243,32 @@ export function TvScreen() {
     return { ...raw, population: Math.ceil(raw.population / 10) * 10 };
   }, [view.agents]));
   const layoutRooms = useStableValue(view.rooms);
-  const layout = useMemo(() => buildLayout(layoutKind, layoutRooms, demand), [layoutKind, layoutRooms, demand]);
+  const safe = useMemo(
+    () => buildSafeLayout(layoutKind, layoutRooms, demand, decor.decoration),
+    [layoutKind, layoutRooms, demand, decor.decoration],
+  );
+  const layout = safe.layout;
+  // A edição só é aceita se nenhum dos 3 layouts (com as salas de agora) ficar com algo inalcançável.
+  const validateDecoration = useCallback(
+    (next: Decoration) => {
+      for (const kind of LAYOUT_KINDS) {
+        const issues = layoutIssues(buildLayout(kind, layoutRooms, demand, { decoration: next, blockingZones: "all" }));
+        if (issues.length > 0) {
+          const zone = issues[0].zoneId;
+          const label = !zone
+            ? "corredor"
+            : zone === "centro"
+              ? "Sala do Friol"
+              : (LEISURE_ROOMS.find((room) => `lazer:${room.id}` === zone)?.label ??
+                layoutRooms.find((room) => room.id === zone)?.label ??
+                zone);
+          return `Recusado: no layout "${LAYOUT_LABELS[kind]}" isso bloquearia a passagem (${label}).`;
+        }
+      }
+      return null;
+    },
+    [layoutRooms, demand],
+  );
 
   const movementNow = Math.floor(now / 5000) * 5000;
   const targets = useMemo(
@@ -290,10 +322,7 @@ export function TvScreen() {
   }, [sceneTargets, sceneAgents, shownPlan]);
 
   const shownZones = shownPlan ? shownPlan.zones : layout.zones;
-  const furniture = useMemo(
-    () => [...(shownPlan ? shownPlan.furniture : layout.furniture), ...decorationItems(shownZones, decor.decoration)],
-    [shownPlan, layout.furniture, shownZones, decor.decoration],
-  );
+  const furniture = shownPlan ? shownPlan.furniture : layout.furniture;
 
   const camera = useMemo(
     () => fitCamera(shownPlan ? shownPlan.bounds : layout.bounds, viewport),
@@ -339,6 +368,8 @@ export function TvScreen() {
           zones={decorableZones(layout, shownZones)}
           decoration={decor.decoration}
           error={decor.error}
+          dropped={safe.dropped}
+          validate={validateDecoration}
           onChange={(next) => void decor.save(next)}
           onClose={() => setEditing(false)}
         />

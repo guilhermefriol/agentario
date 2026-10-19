@@ -8,7 +8,7 @@ const COLS = Math.ceil(CANVAS_W / CELL);
 const ROWS = Math.ceil(CANVAS_H / CELL);
 const MAX_RADIUS = 10;
 
-const cellOf = (x: number, y: number) => {
+export const cellOf = (x: number, y: number) => {
   const c = Math.min(COLS - 1, Math.max(0, Math.floor(x / CELL)));
   const r = Math.min(ROWS - 1, Math.max(0, Math.floor(y / CELL)));
   return r * COLS + c;
@@ -19,7 +19,7 @@ const centerOf = (index: number) => ({
 });
 
 /** Células livres alcançáveis a partir das origens (vizinhança de 4). */
-function reachableCells(grid: Uint8Array, origins: Array<{ x: number; y: number }>): Set<number> {
+export function reachableCells(grid: Uint8Array, origins: Array<{ x: number; y: number }>): Set<number> {
   const seen = new Set<number>();
   const queue: number[] = [];
   for (const origin of origins) {
