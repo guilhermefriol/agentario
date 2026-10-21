@@ -306,10 +306,8 @@ export function TvScreen() {
           onClick={() => setDemo((value) => !value)}
           data-testid="logo"
         >
-          <span className={`font-display text-4xl tracking-wide ${demo ? "text-amber-400" : "text-white"}`}>
-            Agentário
-          </span>
-          {demo ? <span className="text-lg text-amber-300">modo demonstração</span> : null}
+          {/* Sem indicação de demonstração na tela (para print); o botão no canto mostra o estado. */}
+          <span className="font-display text-4xl tracking-wide text-white">Agentário</span>
         </button>
         <div className="flex items-center gap-6 text-white/80">
           <span className="text-lg" data-testid="counts">
