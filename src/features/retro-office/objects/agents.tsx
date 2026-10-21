@@ -326,8 +326,9 @@ export const AgentModel = memo(function AgentModel({
               : 0;
     }
 
+    // Directed agents also sit at leisure (pews, chairs): their face follows the real status.
     const working =
-      agent.state === "sitting" ||
+      (agent.state === "sitting" && !agent.directed) ||
       isWorkout ||
       isDancing ||
       agent.status === "working";
