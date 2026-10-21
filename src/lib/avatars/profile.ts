@@ -25,6 +25,8 @@ export type AgentAvatarProfile = {
     headset: boolean;
     hatStyle: AgentAvatarHatStyle;
     backpack: boolean;
+    /** Barba na cor do cabelo (opcional; ausente = sem barba). */
+    beard?: boolean;
   };
 };
 

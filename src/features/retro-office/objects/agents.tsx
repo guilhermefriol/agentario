@@ -575,6 +575,7 @@ export const AgentModel = memo(function AgentModel({
   const bottomStyle = resolvedAppearance.clothing.bottomStyle;
   const hatStyle = resolvedAppearance.accessories.hatStyle;
   const showGlasses = resolvedAppearance.accessories.glasses;
+  const showBeard = resolvedAppearance.accessories.beard === true;
   const showHeadset = resolvedAppearance.accessories.headset;
   const showBackpack = resolvedAppearance.accessories.backpack;
   const accessoryColor = topColor;
@@ -1063,6 +1064,31 @@ export const AgentModel = memo(function AgentModel({
             <meshBasicMaterial color="#111827" />
           </mesh>
         </>
+      ) : null}
+      {showBeard ? (
+        <group>
+          {/* Queixo, laterais do maxilar, costeletas e bigode — a boca fica à mostra. */}
+          <mesh position={[0, 0.403, 0.045]}>
+            <boxGeometry args={[0.17, 0.05, 0.07]} />
+            <meshLambertMaterial color={hairColor} />
+          </mesh>
+          {[-0.058, 0.058].map((x) => (
+            <mesh key={`maxilar-${x}`} position={[x, 0.432, 0.071]}>
+              <boxGeometry args={[0.046, 0.034, 0.012]} />
+              <meshLambertMaterial color={hairColor} />
+            </mesh>
+          ))}
+          {[-0.083, 0.083].map((x) => (
+            <mesh key={`costeleta-${x}`} position={[x, 0.455, 0.02]}>
+              <boxGeometry args={[0.012, 0.075, 0.09]} />
+              <meshLambertMaterial color={hairColor} />
+            </mesh>
+          ))}
+          <mesh position={[0, 0.448, 0.077]}>
+            <boxGeometry args={[0.07, 0.014, 0.01]} />
+            <meshLambertMaterial color={hairColor} />
+          </mesh>
+        </group>
       ) : null}
       <mesh ref={mouthRef} position={[0, 0.436, 0.074]}>
         <boxGeometry args={[0.05, 0.014, 0.01]} />

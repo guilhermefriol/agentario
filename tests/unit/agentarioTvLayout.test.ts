@@ -124,7 +124,7 @@ describe("escritório (um andar com todas as salas)", () => {
     }
   });
 
-  it("mesa redonda inteira dentro do Refeitório; Friol no trono atrás da mesa grande, olhando a porta", () => {
+  it("mesa redonda inteira dentro do Refeitório; Friol no trono atrás da mesa grande, de frente para a porta (sul)", () => {
     const layout = buildLayout(rooms, demand);
     const cafe = layout.zones.find((z) => z.id === "lazer:refeitorio")!;
     const table = layout.furniture.find((f) => f.type === "round_table")!;
@@ -133,10 +133,10 @@ describe("escritório (um andar com todas as salas)", () => {
     expect(table.y).toBeGreaterThan(cafe.y);
     expect(table.y + 120).toBeLessThan(cafe.y + cafe.h);
     const { center } = layout;
-    expect(center.door.y).toBeLessThan(center.desk.y);
-    expect(center.desk.y + center.desk.h).toBeLessThan(center.throne.y);
-    expect(center.friol).toMatchObject({ x: center.throne.x, y: center.throne.y, pose: "sit", facing: Math.PI });
-    expect(center.visits.every((v) => v.y < center.desk.y)).toBe(true);
+    expect(center.door.y).toBeGreaterThan(center.desk.y + center.desk.h);
+    expect(center.throne.y).toBeLessThan(center.desk.y);
+    expect(center.friol).toMatchObject({ x: center.throne.x, y: center.throne.y, pose: "sit", facing: 0 });
+    expect(center.visits.every((v) => v.y > center.desk.y + center.desk.h)).toBe(true);
   });
 
   it("sala com mais funcionários ganha mais mesas", () => {

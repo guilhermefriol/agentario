@@ -207,6 +207,8 @@ export function buildOfficeLayout(
   let waiting: Spot[] = [];
   for (const { spec, x } of bandZones) {
     const doorX = doorCenterX({ x, w: spec.w });
+    // A sala do Friol abre para o sul (ele fica de frente para quem chega e para a câmera).
+    const doorSide = spec.kind === "center" ? "bottom" : "top";
     const zone: Zone = {
       id: spec.id,
       kind: spec.kind,
@@ -216,19 +218,19 @@ export function buildOfficeLayout(
       w: spec.w,
       h: LEISURE_H,
       lit: true,
-      door: { x: doorX, y: bandTop - CELL / 2 },
+      door: { x: doorX, y: doorSide === "top" ? bandTop - CELL / 2 : bandBottom + CELL / 2 },
     };
     const make = itemFactory(zone.id);
     zones.push(zone);
-    furniture.push(...roomWalls(zone, "top", make));
+    furniture.push(...roomWalls(zone, doorSide, make));
     if (spec.kind === "center") {
       center = centerContents(zone, make);
       furniture.push(...center.furniture);
       centerDoor = zone.door;
-      // Do lado de fora da porta, para quem olha a porta: Rússia à direita (oeste), Brasil à esquerda (leste).
+      // Do lado de fora da porta (sul), para quem olha a porta: Rússia à direita (leste), Brasil à esquerda (oeste).
       flags = {
-        russia: { x: doorX - 3 * CELL, y: bandTop - CELL },
-        brazil: { x: doorX + 3 * CELL, y: bandTop - CELL },
+        russia: { x: doorX + 3 * CELL, y: bandBottom + CELL },
+        brazil: { x: doorX - 3 * CELL, y: bandBottom + CELL },
       };
     } else if (spec.kind === "waiting") {
       waiting = waitingContents(zone, Math.max(demand.population, 1));

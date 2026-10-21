@@ -241,31 +241,32 @@ export function leisureContents(
 }
 
 /**
- * Sala do Friol (centro), porta no topo: tapete vermelho da porta até a mesa grande; atrás dela,
- * o trono onde o Friol senta olhando para quem chega. Mesa, trono e tapete são desenhados pelo
- * ambiente da TV; a mesa entra na navegação como bloqueio (`blockers`).
+ * Sala do Friol (centro), porta embaixo (sul): tapete vermelho da porta até a mesa grande; atrás
+ * dela, ao norte, o trono onde o Friol senta de frente para quem chega (e para a câmera da TV).
+ * Mesa, trono e tapete são desenhados pelo ambiente da TV; a mesa entra na navegação (`blockers`).
  */
 export function centerContents(zone: Zone, make: (item: Item) => FurnitureItem) {
   const cols = Math.round(zone.w / CELL);
   const cx = zone.x + zone.w / 2;
-  const desk = { x: cx - 4 * CELL, y: zone.y + 6 * CELL, w: 8 * CELL, h: 40 };
-  const throne = { x: cx, y: zone.y + 9 * CELL + CELL / 2 };
-  const carpet = { x: cx - 40, y: zone.y + 4, w: 80, h: desk.y - zone.y - 4 };
+  const desk = { x: cx - 4 * CELL, y: zone.y + 4 * CELL, w: 8 * CELL, h: 40 };
+  const throne = { x: cx, y: zone.y + 2 * CELL + CELL / 2 };
+  const carpetTop = desk.y + desk.h;
+  const carpet = { x: cx - 40, y: carpetTop, w: 80, h: zone.y + zone.h - 4 - carpetTop };
   const furniture = [
     make({ type: "lamp", ...placeByVisualCenter("lamp", cx - 3 * CELL, throne.y) }),
     make({ type: "lamp", ...placeByVisualCenter("lamp", cx + 3 * CELL, throne.y) }),
   ];
   const blockers = [make({ type: "wall", x: desk.x, y: desk.y, w: desk.w, h: desk.h })];
-  const friol: Spot = { ...throne, facing: Math.PI, pose: "sit" };
-  // Visitas de pé no tapete, de frente para o Friol (olhando para o sul).
+  const friol: Spot = { ...throne, facing: 0, pose: "sit" };
+  // Visitas de pé no tapete, de frente para o Friol (olhando para o norte).
   const visits: Spot[] = [-1.5, -0.5, 0.5, 1.5].map((k) => ({
     x: cx + k * CELL,
-    y: zone.y + 4 * CELL + CELL / 2,
-    facing: 0,
+    y: zone.y + 7 * CELL + CELL / 2,
+    facing: Math.PI,
     pose: "stand",
   }));
-  const stand: Spot[] = [2, 3, 4, 5, 6, 7].map((r) => ({ ...cell(zone, 1, r), facing: Math.PI / 2, pose: "stand" }));
-  const fiscal: Spot = { ...cell(zone, cols - 2, 2), facing: -Math.PI / 2, pose: "stand" };
+  const stand: Spot[] = [4, 5, 6, 7, 8, 9].map((r) => ({ ...cell(zone, 1, r), facing: Math.PI / 2, pose: "stand" }));
+  const fiscal: Spot = { ...cell(zone, cols - 2, 9), facing: -Math.PI / 2, pose: "stand" };
   return { furniture, blockers, friol, visits, stand, fiscal, desk, throne, carpet };
 }
 

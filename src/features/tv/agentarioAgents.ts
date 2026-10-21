@@ -1,4 +1,5 @@
 import type { OfficeAgent } from "@/features/retro-office/core/types";
+import { createDefaultAgentAvatarProfile } from "@/lib/avatars/profile";
 import { sceneSafeText } from "@/features/tv/sceneText";
 
 export type AgentarioAgentKind = "owner" | "session" | "staff" | "intern" | "fiscal";
@@ -63,6 +64,12 @@ export function parseAgentarioAgents(payload: unknown): AgentarioAgent[] {
   return agents;
 }
 
+/** O Friol: o avatar padrão dele, com barba. */
+const friolAvatar = () => {
+  const base = createDefaultAgentAvatarProfile("friol");
+  return { ...base, accessories: { ...base.accessories, beard: true } };
+};
+
 /** Converte para o formato da cena 3D. O subtítulo mostra a tarefa ou, parado, a sala. */
 export function toOfficeAgents(agents: AgentarioAgent[]): OfficeAgent[] {
   return agents.map((agent) => ({
@@ -72,7 +79,7 @@ export function toOfficeAgents(agents: AgentarioAgent[]): OfficeAgent[] {
     status: agent.status,
     color: KIND_COLORS[agent.kind],
     item: KIND_ITEMS[agent.kind],
-    avatarProfile: null,
+    avatarProfile: agent.kind === "owner" ? friolAvatar() : null,
   }));
 }
 

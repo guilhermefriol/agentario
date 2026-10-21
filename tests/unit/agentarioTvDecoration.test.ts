@@ -65,8 +65,8 @@ describe("decoração", () => {
     const blocking: Decoration = {
       version: 2,
       zones: {
-        // Linha 1 logo abaixo da porta da sala do Friol, de ponta a ponta.
-        centro: { items: [{ type: "lamp", slot: 0 }], walls: [{ c: 1, r: 1, len: 8, dir: "h" }] },
+        // Fileira logo acima da porta da sala do Friol (que abre para o sul), de ponta a ponta.
+        centro: { items: [{ type: "lamp", slot: 0 }], walls: [{ c: 1, r: 10, len: 13, dir: "h" }] },
         "lazer:descanso": { items: [{ type: "plant", slot: 3 }], walls: [] },
       },
     };

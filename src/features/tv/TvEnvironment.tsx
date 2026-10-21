@@ -58,7 +58,7 @@ const VELVET = "#9b1c2e";
 
 /** "Sol" no chão da sala do Friol, irradiando atrás do trono: o centro do universo. */
 function Sun({ layout }: { layout: Layout }) {
-  const [x, , z] = toWorld(layout.center.throne.x, layout.center.throne.y + CELL / 2);
+  const [x, , z] = toWorld(layout.center.throne.x, layout.center.throne.y - CELL / 2);
   const rays = Array.from({ length: 16 }, (_, i) => (i / 16) * Math.PI * 2);
   return (
     <group position={[x, 0.006, z]} rotation={[-Math.PI / 2, 0, 0]}>
@@ -114,7 +114,7 @@ function GrandDesk({ layout }: { layout: Layout }) {
   );
 }
 
-/** Trono atrás da mesa: assento de veludo, encosto alto e braços dourados (olha para a porta). */
+/** Trono atrás da mesa: assento de veludo, encosto alto (ao norte) e braços dourados; olha para a porta (sul). */
 function Throne({ layout }: { layout: Layout }) {
   const [x, , z] = toWorld(layout.center.throne.x, layout.center.throne.y);
   return (
@@ -127,15 +127,15 @@ function Throne({ layout }: { layout: Layout }) {
         <boxGeometry args={[0.42, 0.04, 0.36]} />
         <meshStandardMaterial color={VELVET} roughness={0.9} />
       </mesh>
-      <mesh position={[0, 0.85, 0.24]} castShadow>
+      <mesh position={[0, 0.85, -0.24]} castShadow>
         <boxGeometry args={[0.56, 1.3, 0.08]} />
         <meshStandardMaterial color={GOLD} metalness={0.8} roughness={0.3} />
       </mesh>
-      <mesh position={[0, 0.85, 0.195]}>
+      <mesh position={[0, 0.85, -0.195]}>
         <boxGeometry args={[0.42, 1.1, 0.02]} />
         <meshStandardMaterial color={VELVET} roughness={0.9} />
       </mesh>
-      <mesh position={[0, 1.58, 0.24]}>
+      <mesh position={[0, 1.58, -0.24]}>
         <sphereGeometry args={[0.1, 16, 16]} />
         <meshStandardMaterial color={GOLD} emissive={GOLD} emissiveIntensity={0.4} metalness={0.9} roughness={0.2} />
       </mesh>

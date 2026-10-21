@@ -42,6 +42,12 @@ describe("agentarioAgents", () => {
     expect(office[0]).toMatchObject({ name: "Friol", subtitle: null, item: "coffee" });
   });
 
+  it("o Friol tem barba; os demais usam o avatar padrão", () => {
+    const office = toOfficeAgents(parseAgentarioAgents(payload));
+    expect(office[0].avatarProfile?.accessories.beard).toBe(true);
+    expect(office[1].avatarProfile).toBeNull();
+  });
+
   it("detecta igualdade estrutural", () => {
     const a = parseAgentarioAgents(payload);
     const b = parseAgentarioAgents(JSON.parse(JSON.stringify(payload)));
