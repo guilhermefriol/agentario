@@ -8,6 +8,7 @@ import { buildLayout, layoutIssues, type Layout, type LayoutRoom, type Spot } fr
 import { visualRect } from "@/features/tv/layout/modelBounds";
 import { LEISURE_ROOMS } from "@/features/tv/layout/rooms";
 import { assignTargets, layoutDemand } from "@/features/tv/movement";
+import { maskName, maskRoomNames } from "@/features/tv/privacy";
 import { fitCamera, isNight } from "@/features/tv/view";
 
 // Salas e pessoas fictícias, com distribuição de funcionários parecida com a real (poucos projetos com muitos).
@@ -240,13 +241,43 @@ describe("demonstração", () => {
     for (const room of rooms) {
       expect(result.agents.some((a) => a.roomId === room.id && a.status === "working" && a.kind === "session")).toBe(true);
     }
-    expect(result.agents.slice(0, 5)).toEqual(real);
+    // Os reais mantêm id e nome e passam a trabalhar (menos o Friol e o Fiscal).
+    expect(result.agents.slice(0, 5).map((a) => [a.id, a.name])).toEqual(real.map((a) => [a.id, a.name]));
+    expect(result.agents.filter((a) => a.kind !== "owner" && a.kind !== "fiscal" && !a.leisure).every((a) => a.status === "working")).toBe(true);
     const fiscals = result.agents.filter((a) => a.kind === "fiscal");
     expect(fiscals.length).toBeGreaterThanOrEqual(1);
     expect(fiscals.length).toBeLessThanOrEqual(2);
     expect(JSON.stringify(applyDemo(rooms, real, 0))).toEqual(JSON.stringify(result));
     const names = result.agents.map((a) => a.name).filter((n) => n !== "Fiscal Codex");
     expect(new Set(names).size).toBe(names.length);
+  });
+});
+
+describe("demonstração no escritório", () => {
+  it("todos trabalham nas salas e a turma do lazer ocupa cada sala de lazer e a sala do Friol", () => {
+    const demo = applyDemo(rooms, people, 0);
+    const layout = buildLayout(demo.rooms, layoutDemand(demo.agents));
+    const targets = assignTargets({ layout, rooms: demo.rooms, agents: demo.agents, now: 0, demo: true });
+    const inside = (zoneId: string, p: { x: number; y: number }) => {
+      const z = layout.zones.find((zone) => zone.id === zoneId)!;
+      return p.x >= z.x && p.x <= z.x + z.w && p.y >= z.y && p.y <= z.y + z.h;
+    };
+    for (const id of ["academia", "banheiros", "refeitorio", "descanso", "igreja"]) {
+      const crowd = demo.agents.filter((a) => a.leisure === id);
+      expect(crowd.length).toBeGreaterThan(0);
+      expect(crowd.every((a) => inside(`lazer:${id}`, targets[a.id]))).toBe(true);
+    }
+    const visitors = demo.agents.filter((a) => a.leisure === "visita");
+    expect(visitors.every((a) => inside("centro", targets[a.id]))).toBe(true);
+  });
+});
+
+describe("ocultar nomes", () => {
+  it("mostra só a primeira metade do nome das salas", () => {
+    expect(maskName("friolbrain_BKP")).toBe("friolbr•••••••");
+    expect(maskName("abc")).toBe("ab•");
+    const masked = maskRoomNames({ rooms: [{ id: "p", label: "projeto", lit: true }], agents: [person("x", "p", "idle")] });
+    expect(masked.rooms[0].label).toBe("proj•••");
   });
 });
 

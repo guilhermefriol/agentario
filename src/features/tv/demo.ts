@@ -1,4 +1,5 @@
 import type { AgentarioAgent, AgentarioRoom } from "@/features/tv/agentarioAgents";
+import type { LeisureId } from "@/features/tv/layout/types";
 import { unitHash } from "@/features/tv/movement";
 
 export const DEMO_WINDOW_MS = 60 * 1000;
@@ -15,10 +16,21 @@ const DEMO_TASKS = ["Editando arquivo", "Rodando comando", "Lendo código", "Pes
 const DEMO_INTERN_ROLES = ["Explore", "Plan", "general-purpose"];
 const DEMO_VERDICTS = ["aprovar", "revisar", "bloquear"];
 
+// Turma do lazer na demonstração (para a foto ficar cheia) e duas visitas ao Friol.
+const LEISURE_CROWD: Array<[LeisureId | "visita", number]> = [
+  ["academia", 4],
+  ["banheiros", 2],
+  ["refeitorio", 4],
+  ["descanso", 4],
+  ["igreja", 6],
+  ["visita", 2],
+];
+
 /**
- * Modo demonstração: todas as salas acesas, um Claude trabalhando em cada uma, estagiários
- * nas salas sem funcionários e 1–2 auditorias do Fiscal. Os personagens reais continuam
- * com os mesmos ids e nomes. Quantos fictícios cada sala ganha depende só do id da sala.
+ * Modo demonstração: todas as salas acesas e todos os agentes trabalhando (os reais também,
+ * com os mesmos ids e nomes), um Claude a mais em cada sala, estagiários nas salas sem
+ * funcionários, 1–2 auditorias do Fiscal e uma turma fixa no lazer e visitando o Friol.
+ * Quantos fictícios cada sala ganha depende só do id da sala.
  */
 export function applyDemo(
   rooms: AgentarioRoom[],
@@ -88,8 +100,32 @@ export function applyDemo(
       roomId: room.id,
     });
   }
+  for (const [leisure, count] of LEISURE_CROWD) {
+    for (let i = 0; i < count; i += 1) {
+      extra.push({
+        id: `demo:lazer:${leisure}:${i}`,
+        name: nextName(),
+        kind: "session",
+        role: "Claude",
+        status: "idle",
+        task: null,
+        room: null,
+        roomId: null,
+        leisure,
+      });
+    }
+  }
+  const working = agents.map((agent) =>
+    agent.kind === "owner" || agent.kind === "fiscal" || agent.status === "working"
+      ? agent
+      : {
+          ...agent,
+          status: "working" as const,
+          task: DEMO_TASKS[Math.floor(unitHash(`${agent.id}:task:${window}`) * DEMO_TASKS.length)],
+        },
+  );
   return {
     rooms: rooms.map((room) => ({ ...room, lit: true })),
-    agents: [...agents, ...extra],
+    agents: [...working, ...extra],
   };
 }

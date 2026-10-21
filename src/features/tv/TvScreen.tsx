@@ -10,6 +10,7 @@ import { applyDemo } from "@/features/tv/demo";
 import { buildLayout, buildSafeLayout, layoutIssues } from "@/features/tv/layout";
 import { LEISURE_ROOMS } from "@/features/tv/layout/rooms";
 import { assignTargets, layoutDemand } from "@/features/tv/movement";
+import { maskRoomNames } from "@/features/tv/privacy";
 import { configureSceneFonts } from "@/features/tv/sceneText";
 import { TvEnvironment } from "@/features/tv/TvEnvironment";
 import { useAgentarioFeed, type AgentarioFeedStatus } from "@/features/tv/useAgentarioFeed";
@@ -178,6 +179,7 @@ export function TvScreen() {
   const [demo, setDemo] = useState(false);
   const [selected, setSelected] = useState<{ id: string; at: number } | null>(null);
   const [editing, setEditing] = useState(false);
+  const [hideNames, setHideNames] = useState(false);
   const decor = useDecoration();
 
   // ?demo=1 liga a demonstração (não fica salvo).
@@ -192,7 +194,11 @@ export function TvScreen() {
     const onKey = (event: KeyboardEvent) => {
       if (event.key === "Escape") setSelected(null);
       const typing = event.target instanceof HTMLSelectElement || event.target instanceof HTMLInputElement;
-      if ((event.key === "e" || event.key === "E") && !typing) setEditing((value) => !value);
+      if (typing) return;
+      const key = event.key.toLowerCase();
+      if (key === "e") setEditing((value) => !value);
+      if (key === "d") setDemo((value) => !value);
+      if (key === "n") setHideNames((value) => !value);
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -200,10 +206,13 @@ export function TvScreen() {
 
   // Demo muda a cada minuto; o resto da cena só reage a mudanças reais.
   const demoWindow = Math.floor(now / 60_000);
-  const view = useMemo(
-    () => (demo ? applyDemo(feed.rooms, feed.agents, demoWindow * 60_000) : { rooms: feed.rooms, agents: feed.agents }),
-    [demo, demoWindow, feed.rooms, feed.agents],
-  );
+  const view = useMemo(() => {
+    const base = demo
+      ? applyDemo(feed.rooms, feed.agents, demoWindow * 60_000)
+      : { rooms: feed.rooms, agents: feed.agents };
+    // "Ocultar nomes": só a primeira metade do nome das salas (para tirar print).
+    return hideNames ? maskRoomNames(base) : base;
+  }, [demo, demoWindow, feed.rooms, feed.agents, hideNames]);
 
   const demand = useStableValue(
     useMemo(() => {
@@ -314,6 +323,26 @@ export function TvScreen() {
         </div>
       </header>
       <nav className="absolute bottom-3 right-4 flex gap-1 rounded-full bg-black/60 p-1 text-sm">
+        <button
+          type="button"
+          onClick={() => setHideNames((value) => !value)}
+          data-active={hideNames}
+          data-testid="hide-names-toggle"
+          title="Mostra só metade do nome das salas (tecla N)"
+          className={`rounded-full px-3 py-1 ${hideNames ? "bg-amber-400 text-black" : "text-white/70"}`}
+        >
+          {hideNames ? "Mostrar nomes" : "Ocultar nomes"}
+        </button>
+        <button
+          type="button"
+          onClick={() => setDemo((value) => !value)}
+          data-active={demo}
+          data-testid="demo-toggle"
+          title="Todos trabalhando e o lazer cheio (tecla D)"
+          className={`rounded-full px-3 py-1 ${demo ? "bg-amber-400 text-black" : "text-white/70"}`}
+        >
+          {demo ? "Sair da demonstração" : "Demonstração"}
+        </button>
         <button
           type="button"
           onClick={() => setEditing((value) => !value)}

@@ -1,4 +1,5 @@
 import type { OfficeAgent } from "@/features/retro-office/core/types";
+import type { LeisureId } from "@/features/tv/layout/types";
 import { createDefaultAgentAvatarProfile } from "@/lib/avatars/profile";
 import { sceneSafeText } from "@/features/tv/sceneText";
 
@@ -13,6 +14,8 @@ export type AgentarioAgent = {
   task: string | null;
   room: string | null;
   roomId: string | null;
+  /** Só na demonstração: onde a pessoa (parada) prefere ficar — uma sala de lazer ou visita ao Friol. */
+  leisure?: LeisureId | "visita";
 };
 
 const KINDS: ReadonlySet<string> = new Set(["owner", "session", "staff", "intern", "fiscal"]);

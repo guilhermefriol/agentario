@@ -99,7 +99,7 @@ export function assignTargets(input: MovementInput): Record<string, AgentDirecte
       continue;
     }
     const lit = agent.roomId ? litById.get(agent.roomId) === true : true;
-    if (!lit || (agent.roomId && !roomShown)) mustLeave.push(agent);
+    if (agent.leisure || !lit || (agent.roomId && !roomShown)) mustLeave.push(agent);
     else mayLeave.push(agent);
   }
 
@@ -108,7 +108,10 @@ export function assignTargets(input: MovementInput): Record<string, AgentDirecte
     unitHash(`${a.id}:${leisureWindow}`) - unitHash(`${b.id}:${leisureWindow}`);
   const sortedMay = [...mayLeave].sort(byWindowHash);
   const leaveCount = Math.floor(sortedMay.length * ratio);
-  const leavers = [...mustLeave, ...sortedMay.slice(0, leaveCount)].sort(byWindowHash);
+  // Quem tem preferência de lazer (demonstração) escolhe primeiro.
+  const leavers = [...mustLeave, ...sortedMay.slice(0, leaveCount)].sort(
+    (a, b) => Number(Boolean(b.leisure)) - Number(Boolean(a.leisure)) || byWindowHash(a, b),
+  );
   for (const agent of sortedMay.slice(leaveCount)) {
     if (agent.roomId) stayByRoom.set(agent.roomId, [...(stayByRoom.get(agent.roomId) ?? []), agent]);
     else centerStay.push(agent);
@@ -149,16 +152,21 @@ export function assignTargets(input: MovementInput): Record<string, AgentDirecte
     waitingIndex += 1;
   }
   for (const agent of leavers) {
+    const wantsVisit = agent.leisure === "visita";
     if (
       visits < MAX_VISITS &&
       agent.kind !== "intern" &&
-      unitHash(`${agent.id}:visita:${visitWindow}`) < VISIT_CHANCE
+      (wantsVisit || (!agent.leisure && unitHash(`${agent.id}:visita:${visitWindow}`) < VISIT_CHANCE))
     ) {
       targets[agent.id] = toTarget(layout.center.visits[visits], arriving(agent.id));
       visits += 1;
       continue;
     }
-    const start = Math.floor(unitHash(`${agent.id}:sala:${leisureWindow}`) * LEISURE_ROOMS.length);
+    const preferred = LEISURE_ROOMS.findIndex((room) => room.id === agent.leisure);
+    const start =
+      preferred >= 0
+        ? preferred
+        : Math.floor(unitHash(`${agent.id}:sala:${leisureWindow}`) * LEISURE_ROOMS.length);
     let spot: Spot | null = null;
     for (let step = 0; step < LEISURE_ROOMS.length && !spot; step += 1) {
       const id = LEISURE_ROOMS[(start + step) % LEISURE_ROOMS.length].id;
