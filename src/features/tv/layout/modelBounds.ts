@@ -6,7 +6,9 @@ import {
 import type { FurnitureItem } from "@/features/retro-office/core/types";
 
 /**
- * Limites desenhados de cada modelo 3D (px do canvas, sem rotação, relativos ao canto do item):
+ * Limites desenhados de cada modelo 3D .glb (px do canvas, sem rotação, relativos ao canto do
+ * item). Tipos desenhados por formas próprias da cena (mesa redonda, teclado, academia, pia...)
+ * ficam dentro do próprio espaço e não entram aqui:
  * [minX, maxX, minY, maxY]. Gerados a partir dos arquivos .glb (árvore de nós + escala da cena).
  * Os modelos são desenhados ao norte do ponto de origem, enquanto o espaço de navegação padrão
  * fica ao sul — por isso a TV usa estes limites para bloquear exatamente onde o móvel aparece.
@@ -15,7 +17,6 @@ export const MODEL_BOUNDS: Record<string, readonly [number, number, number, numb
   desk_cubicle: [-0.8, 60.4, -31.7, 1],
   executive_desk: [0, 97.4, -97.4, 0],
   chair: [0, 22.3, -21, 0],
-  round_table: [0, 123.2, -142.2, 0],
   couch: [0, 98, -41, 0],
   couch_v: [0, 56.7, -31.9, 0],
   bookshelf: [0, 33.3, -20.8, 0],

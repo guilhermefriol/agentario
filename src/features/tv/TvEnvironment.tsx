@@ -52,9 +52,13 @@ function Rug({ zone }: { zone: Zone }) {
   );
 }
 
-/** "Sol" no chão da sala do Friol: o centro do universo. */
-function Sun({ zone }: { zone: Zone }) {
-  const [x, , z] = toWorld(zone.x + zone.w / 2, zone.y + zone.h / 2);
+const WOOD = "#5a2f17";
+const GOLD = "#d4af37";
+const VELVET = "#9b1c2e";
+
+/** "Sol" no chão da sala do Friol, irradiando atrás do trono: o centro do universo. */
+function Sun({ layout }: { layout: Layout }) {
+  const [x, , z] = toWorld(layout.center.throne.x, layout.center.throne.y + CELL / 2);
   const rays = Array.from({ length: 16 }, (_, i) => (i / 16) * Math.PI * 2);
   return (
     <group position={[x, 0.006, z]} rotation={[-Math.PI / 2, 0, 0]}>
@@ -66,6 +70,79 @@ function Sun({ zone }: { zone: Zone }) {
         <mesh key={`raio-${i}`} position={[Math.cos(angle) * 1.45, Math.sin(angle) * 1.45, 0]} rotation={[0, 0, angle]}>
           <planeGeometry args={[i % 2 === 0 ? 0.9 : 0.55, 0.12]} />
           <meshStandardMaterial color={SUN} emissive={SUN} emissiveIntensity={0.25} roughness={0.6} />
+        </mesh>
+      ))}
+    </group>
+  );
+}
+
+/** Tapete vermelho com borda dourada, da porta até a mesa do Friol. */
+function RedCarpet({ layout }: { layout: Layout }) {
+  const { cx, cz, w, h } = worldRect(layout.center.carpet);
+  return (
+    <group position={[cx, 0.007, cz]} rotation={[-Math.PI / 2, 0, 0]}>
+      <mesh>
+        <planeGeometry args={[w, h]} />
+        <meshStandardMaterial color={GOLD} roughness={0.7} />
+      </mesh>
+      <mesh position={[0, 0, 0.001]}>
+        <planeGeometry args={[w - 0.12, h - 0.06]} />
+        <meshStandardMaterial color={VELVET} roughness={0.95} />
+      </mesh>
+    </group>
+  );
+}
+
+/** Mesa grande de madeira escura com acabamento dourado. */
+function GrandDesk({ layout }: { layout: Layout }) {
+  const { cx, cz, w, h } = worldRect(layout.center.desk);
+  return (
+    <group position={[cx, 0, cz]}>
+      <mesh position={[0, 0.27, 0]} castShadow receiveShadow>
+        <boxGeometry args={[w, 0.54, h]} />
+        <meshStandardMaterial color={WOOD} roughness={0.55} metalness={0.1} />
+      </mesh>
+      <mesh position={[0, 0.555, 0]} castShadow>
+        <boxGeometry args={[w + 0.06, 0.03, h + 0.06]} />
+        <meshStandardMaterial color={GOLD} metalness={0.85} roughness={0.25} />
+      </mesh>
+      <mesh position={[0, 0.27, -h / 2 - 0.003]}>
+        <planeGeometry args={[w * 0.7, 0.3]} />
+        <meshStandardMaterial color={GOLD} metalness={0.8} roughness={0.3} />
+      </mesh>
+    </group>
+  );
+}
+
+/** Trono atrás da mesa: assento de veludo, encosto alto e braços dourados (olha para a porta). */
+function Throne({ layout }: { layout: Layout }) {
+  const [x, , z] = toWorld(layout.center.throne.x, layout.center.throne.y);
+  return (
+    <group position={[x, 0, z]}>
+      <mesh position={[0, 0.2, 0.02]} castShadow>
+        <boxGeometry args={[0.5, 0.4, 0.42]} />
+        <meshStandardMaterial color={GOLD} metalness={0.8} roughness={0.3} />
+      </mesh>
+      <mesh position={[0, 0.41, 0.02]}>
+        <boxGeometry args={[0.42, 0.04, 0.36]} />
+        <meshStandardMaterial color={VELVET} roughness={0.9} />
+      </mesh>
+      <mesh position={[0, 0.85, 0.24]} castShadow>
+        <boxGeometry args={[0.56, 1.3, 0.08]} />
+        <meshStandardMaterial color={GOLD} metalness={0.8} roughness={0.3} />
+      </mesh>
+      <mesh position={[0, 0.85, 0.195]}>
+        <boxGeometry args={[0.42, 1.1, 0.02]} />
+        <meshStandardMaterial color={VELVET} roughness={0.9} />
+      </mesh>
+      <mesh position={[0, 1.58, 0.24]}>
+        <sphereGeometry args={[0.1, 16, 16]} />
+        <meshStandardMaterial color={GOLD} emissive={GOLD} emissiveIntensity={0.4} metalness={0.9} roughness={0.2} />
+      </mesh>
+      {[-0.27, 0.27].map((dx) => (
+        <mesh key={`braco-${dx}`} position={[dx, 0.52, 0.02]} castShadow>
+          <boxGeometry args={[0.06, 0.2, 0.4]} />
+          <meshStandardMaterial color={GOLD} metalness={0.8} roughness={0.3} />
         </mesh>
       ))}
     </group>
@@ -219,11 +296,14 @@ export const TvEnvironment = memo(function TvEnvironment({ layout }: { layout: L
       {zones.map((zone) => (
         <Rug key={`rug-${zone.id}`} zone={zone} />
       ))}
-      {zones
-        .filter((zone) => zone.kind === "center")
-        .map((zone) => (
-          <Sun key="sol" zone={zone} />
-        ))}
+      {hasCenter ? (
+        <>
+          <Sun layout={layout} />
+          <RedCarpet layout={layout} />
+          <GrandDesk layout={layout} />
+          <Throne layout={layout} />
+        </>
+      ) : null}
       {zones.map((zone) => (
         <ZoneLabel key={`label-${zone.id}`} zone={zone} />
       ))}

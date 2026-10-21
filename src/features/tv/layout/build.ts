@@ -241,7 +241,8 @@ export function buildOfficeLayout(
   furniture.push(...decorationItems(zones, decor.decoration, { blockingZones: decor.blockingZones }));
 
   const c = center!;
-  const navFurniture = toNavFurniture(furniture);
+  // A mesa grande do Friol é desenhada pelo ambiente da TV: entra só na navegação.
+  const navFurniture = [...toNavFurniture(furniture), ...c.blockers];
   const parts = snapLayoutSpots(
     navFurniture,
     zones,
@@ -249,7 +250,16 @@ export function buildOfficeLayout(
       seatsByRoom,
       fiscalByRoom,
       leisure,
-      center: { friol: c.friol, visits: c.visits, stand: c.stand, fiscal: c.fiscal, door: centerDoor },
+      center: {
+        friol: c.friol,
+        visits: c.visits,
+        stand: c.stand,
+        fiscal: c.fiscal,
+        door: centerDoor,
+        desk: c.desk,
+        throne: c.throne,
+        carpet: c.carpet,
+      },
       waiting,
     },
     [centerDoor],

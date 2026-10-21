@@ -172,10 +172,11 @@ export function leisureContents(
       return { furniture, spots };
     }
     case "refeitorio": {
-      // Mesa redonda no meio (o desenho dela tem 123×142 px) e uma cadeira de cada lado,
-      // posicionadas pelo desenho; a pessoa senta na cadeira olhando para a mesa.
+      // Mesa redonda no meio e uma cadeira de cada lado, posicionadas pelo desenho;
+      // a pessoa senta na cadeira olhando para a mesa.
+      // A mesa redonda é uma forma própria da cena, desenhada dentro do seu espaço (120×120).
       const tableCenter = { x: x + zone.w / 2, y: y + 6 * CELL + CELL / 2 };
-      const tablePos = placeByVisualCenter("round_table", tableCenter.x, tableCenter.y);
+      const tablePos = { x: tableCenter.x - 60, y: tableCenter.y - 60 };
       const seatPoints = [
         { x: tableCenter.x, y: y + CELL + CELL / 2 },
         { x: tableCenter.x, y: y + 10 * CELL + CELL / 2 },
@@ -239,20 +240,33 @@ export function leisureContents(
   }
 }
 
-/** Sala do Friol (centro): mesa grande no meio, visitas, lugares de pé e do Fiscal. Porta no topo. */
+/**
+ * Sala do Friol (centro), porta no topo: tapete vermelho da porta até a mesa grande; atrás dela,
+ * o trono onde o Friol senta olhando para quem chega. Mesa, trono e tapete são desenhados pelo
+ * ambiente da TV; a mesa entra na navegação como bloqueio (`blockers`).
+ */
 export function centerContents(zone: Zone, make: (item: Item) => FurnitureItem) {
   const cols = Math.round(zone.w / CELL);
-  const mid = Math.floor(cols / 2);
-  // Mesa grande no meio; corredor livre na coluna 1 até a cadeira do Friol, atrás da mesa.
+  const cx = zone.x + zone.w / 2;
+  const desk = { x: cx - 4 * CELL, y: zone.y + 6 * CELL, w: 8 * CELL, h: 40 };
+  const throne = { x: cx, y: zone.y + 9 * CELL + CELL / 2 };
+  const carpet = { x: cx - 40, y: zone.y + 4, w: 80, h: desk.y - zone.y - 4 };
   const furniture = [
-    make({ type: "executive_desk", x: zone.x + zone.w / 2 - 65, y: zone.y + 5 * CELL }),
-    make({ type: "lamp", x: zone.x + (cols - 2) * CELL + 2, y: zone.y + 10 * CELL }),
+    make({ type: "lamp", ...placeByVisualCenter("lamp", cx - 3 * CELL, throne.y) }),
+    make({ type: "lamp", ...placeByVisualCenter("lamp", cx + 3 * CELL, throne.y) }),
   ];
-  const friol: Spot = { ...cell(zone, mid, 9), facing: Math.PI, pose: "sit" };
-  const visits: Spot[] = [mid - 2, mid - 1, mid + 1, mid + 2].map((c) => ({ ...cell(zone, c, 3), facing: 0, pose: "stand" }));
+  const blockers = [make({ type: "wall", x: desk.x, y: desk.y, w: desk.w, h: desk.h })];
+  const friol: Spot = { ...throne, facing: Math.PI, pose: "sit" };
+  // Visitas de pé no tapete, de frente para o Friol (olhando para o sul).
+  const visits: Spot[] = [-1.5, -0.5, 0.5, 1.5].map((k) => ({
+    x: cx + k * CELL,
+    y: zone.y + 4 * CELL + CELL / 2,
+    facing: 0,
+    pose: "stand",
+  }));
   const stand: Spot[] = [2, 3, 4, 5, 6, 7].map((r) => ({ ...cell(zone, 1, r), facing: Math.PI / 2, pose: "stand" }));
   const fiscal: Spot = { ...cell(zone, cols - 2, 2), facing: -Math.PI / 2, pose: "stand" };
-  return { furniture, friol, visits, stand, fiscal };
+  return { furniture, blockers, friol, visits, stand, fiscal, desk, throne, carpet };
 }
 
 /** Lugares da Área de espera: uma célula por pessoa, em fileiras (porta no topo). */

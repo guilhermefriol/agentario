@@ -41,7 +41,17 @@ export type Layout = {
   /** Lugar de pé do Fiscal por sala. */
   fiscalByRoom: Record<string, Spot>;
   leisure: Record<LeisureId, Spot[]>;
-  center: { friol: Spot; visits: Spot[]; stand: Spot[]; fiscal: Spot; door: { x: number; y: number } };
+  center: {
+    friol: Spot;
+    visits: Spot[];
+    stand: Spot[];
+    fiscal: Spot;
+    door: { x: number; y: number };
+    /** Peças desenhadas pelo ambiente da TV: mesa grande, trono e tapete vermelho. */
+    desk: { x: number; y: number; w: number; h: number };
+    throne: { x: number; y: number };
+    carpet: { x: number; y: number; w: number; h: number };
+  };
   /** Área de espera: um lugar distinto por pessoa que possa precisar. */
   waiting: Spot[];
   flags: { russia: { x: number; y: number }; brazil: { x: number; y: number } } | null;
