@@ -9,7 +9,7 @@ import {
   OfficeFlagPole,
   RussiaFlagArt,
 } from "@/features/retro-office/scene/environment";
-import { CELL } from "@/features/tv/layout/rooms";
+import { CELL, espiritaPieces, terreiroPieces } from "@/features/tv/layout/rooms";
 import type { Layout, Zone } from "@/features/tv/layout/types";
 import { sceneSafeText } from "@/features/tv/sceneText";
 
@@ -17,7 +17,9 @@ import { sceneSafeText } from "@/features/tv/sceneText";
 const FLOOR_LIT = "#efe1c8";
 const FLOOR_DARK = "#2a2622";
 const FLOOR_LEISURE = "#d3e3e8";
-const FLOOR_WAITING = "#dde3ea";
+// Terra batida no Terreiro; piso claro e sereno na Casa Espírita.
+const FLOOR_TERREIRO = "#b8915f";
+const FLOOR_ESPIRITA = "#ece6da";
 const FLOOR_CENTER = "#f1d98a";
 const GROUND = "#1d1b19";
 const SUN = "#f5c542";
@@ -31,13 +33,15 @@ const worldRect = (zone: Pick<Zone, "x" | "y" | "w" | "h">) => {
 const zoneColor = (zone: Zone) =>
   zone.kind === "center"
     ? FLOOR_CENTER
-    : zone.kind === "leisure"
-      ? FLOOR_LEISURE
-      : zone.kind === "waiting"
-        ? FLOOR_WAITING
-        : zone.lit
-          ? FLOOR_LIT
-          : FLOOR_DARK;
+    : zone.id === "lazer:terreiro"
+      ? FLOOR_TERREIRO
+      : zone.id === "lazer:espirita"
+        ? FLOOR_ESPIRITA
+        : zone.kind === "leisure"
+          ? FLOOR_LEISURE
+          : zone.lit
+            ? FLOOR_LIT
+            : FLOOR_DARK;
 
 /** Tapete na cor de identidade da sala, sob as mesas (mais apagado com a sala escura). */
 function Rug({ zone }: { zone: Zone }) {
@@ -238,6 +242,128 @@ function ChurchFurniture({ zone }: { zone: Zone }) {
   );
 }
 
+/** Vela branca acesa (corpo + chama). */
+function Candle({ position }: { position: [number, number, number] }) {
+  return (
+    <group position={position}>
+      <mesh position={[0, 0.06, 0]}>
+        <cylinderGeometry args={[0.025, 0.025, 0.12, 10]} />
+        <meshStandardMaterial color="#fbf8ef" roughness={0.5} />
+      </mesh>
+      <mesh position={[0, 0.145, 0]}>
+        <sphereGeometry args={[0.018, 8, 8]} />
+        <meshStandardMaterial color="#ffd36b" emissive="#ffb22e" emissiveIntensity={2} />
+      </mesh>
+    </group>
+  );
+}
+
+/**
+ * Terreiro de Umbanda: congá (altar de dois degraus com toalha branca, velas e flores) na parede
+ * oeste, três atabaques no canto sul e o círculo da gira marcado no chão de terra.
+ */
+function TerreiroFurniture({ zone }: { zone: Zone }) {
+  const { giraCenter, conga, atabaques } = terreiroPieces(zone);
+  const [gx, , gz] = toWorld(giraCenter.x, giraCenter.y);
+  const [ax, , az] = toWorld(conga.x + conga.w / 2, conga.y + conga.h / 2);
+  const depth = conga.w * SCALE;
+  const length = conga.h * SCALE;
+  const flowers = ["#ffffff", "#f6d23c", "#e04a5f", "#ffffff", "#7fb3e8"];
+  // Atabaques: rum (maior), rumpi e lé.
+  const drums = [0.62, 0.5, 0.4];
+  return (
+    <group>
+      <mesh position={[gx, 0.004, gz]} rotation={[-Math.PI / 2, 0, 0]}>
+        <ringGeometry args={[2.5 * CELL * SCALE, 2.5 * CELL * SCALE + 0.05, 48]} />
+        <meshBasicMaterial color="#fffaf0" transparent opacity={0.8} />
+      </mesh>
+      <group position={[ax, 0, az]}>
+        <mesh position={[0, 0.22, 0]} castShadow>
+          <boxGeometry args={[depth, 0.44, length]} />
+          <meshStandardMaterial color="#6b4423" roughness={0.8} />
+        </mesh>
+        <mesh position={[0.02, 0.445, 0]}>
+          <boxGeometry args={[depth + 0.04, 0.02, length + 0.04]} />
+          <meshStandardMaterial color="#ffffff" roughness={0.7} />
+        </mesh>
+        <mesh position={[-depth * 0.2, 0.62, 0]} castShadow>
+          <boxGeometry args={[depth * 0.55, 0.34, length * 0.7]} />
+          <meshStandardMaterial color="#ffffff" roughness={0.7} />
+        </mesh>
+        {[-0.45, -0.15, 0.15, 0.45].map((k) => (
+          <Candle key={`vela-${k}`} position={[depth * 0.25, 0.455, k * length]} />
+        ))}
+        {flowers.map((color, i) => (
+          <mesh key={`flor-${i}`} position={[-depth * 0.2, 0.83, (i / (flowers.length - 1) - 0.5) * length * 0.6]}>
+            <sphereGeometry args={[0.045, 10, 10]} />
+            <meshStandardMaterial color={color} roughness={0.6} />
+          </mesh>
+        ))}
+      </group>
+      {atabaques.map((drum, i) => {
+        const [x, , z] = toWorld(drum.x, drum.y);
+        const height = drums[i];
+        return (
+          <group key={`atabaque-${i}`} position={[x, 0, z]}>
+            <mesh position={[0, height / 2, 0]} castShadow>
+              <cylinderGeometry args={[0.1, 0.07, height, 14]} />
+              <meshStandardMaterial color="#8a5a2b" roughness={0.7} />
+            </mesh>
+            <mesh position={[0, height + 0.005, 0]}>
+              <cylinderGeometry args={[0.102, 0.102, 0.01, 14]} />
+              <meshStandardMaterial color="#efe0c2" roughness={0.9} />
+            </mesh>
+            <mesh position={[0, height * 0.7, 0]}>
+              <torusGeometry args={[0.093, 0.008, 6, 20]} />
+              <meshStandardMaterial color="#d8c39a" />
+            </mesh>
+          </group>
+        );
+      })}
+    </group>
+  );
+}
+
+/** Casa Espírita: mesa de palestra com toalha branca, jarra de água e livro aberto. */
+function EspiritaFurniture({ zone }: { zone: Zone }) {
+  const { table } = espiritaPieces(zone);
+  const inset = 8;
+  const top = { x: table.x + inset, y: table.y + inset, w: table.w - 2 * inset, h: table.h - 2 * inset };
+  const [x, , z] = toWorld(top.x + top.w / 2, top.y + top.h / 2);
+  const w = top.w * SCALE;
+  const d = top.h * SCALE;
+  return (
+    <group position={[x, 0, z]}>
+      <mesh position={[0, 0.2, 0]} castShadow>
+        <boxGeometry args={[w, 0.4, d]} />
+        <meshStandardMaterial color="#8b6a4a" roughness={0.7} />
+      </mesh>
+      <mesh position={[0, 0.3, 0]}>
+        <boxGeometry args={[w + 0.04, 0.22, d + 0.04]} />
+        <meshStandardMaterial color="#ffffff" roughness={0.8} />
+      </mesh>
+      <mesh position={[-w * 0.25, 0.5, 0]}>
+        <cylinderGeometry args={[0.05, 0.06, 0.18, 14]} />
+        <meshStandardMaterial color="#cfe8ff" transparent opacity={0.6} roughness={0.1} />
+      </mesh>
+      {[-0.12, -0.04].map((k) => (
+        <mesh key={`copo-${k}`} position={[-w * 0.25 + k * 2, 0.45, d * 0.25]}>
+          <cylinderGeometry args={[0.025, 0.022, 0.07, 10]} />
+          <meshStandardMaterial color="#e6f3ff" transparent opacity={0.7} />
+        </mesh>
+      ))}
+      <mesh position={[w * 0.2, 0.42, 0]} rotation={[0, 0.2, 0]}>
+        <boxGeometry args={[0.26, 0.02, 0.18]} />
+        <meshStandardMaterial color="#f5f1e6" />
+      </mesh>
+      <mesh position={[w * 0.2, 0.415, 0]} rotation={[0, 0.2, 0]}>
+        <boxGeometry args={[0.27, 0.012, 0.19]} />
+        <meshStandardMaterial color="#2f4a6b" />
+      </mesh>
+    </group>
+  );
+}
+
 /** Cabines do banheiro (lado direito da sala). */
 function BathroomStalls({ zone }: { zone: Zone }) {
   return (
@@ -283,6 +409,8 @@ export const TvEnvironment = memo(function TvEnvironment({ layout }: { layout: L
   const { cx, cz, w, h } = worldRect(ground);
   const church = zones.find((zone) => zone.id === "lazer:igreja");
   const bathroom = zones.find((zone) => zone.id === "lazer:banheiros");
+  const terreiro = zones.find((zone) => zone.id === "lazer:terreiro");
+  const espirita = zones.find((zone) => zone.id === "lazer:espirita");
   const hasCenter = zones.some((zone) => zone.kind === "center");
   return (
     <group>
@@ -309,6 +437,8 @@ export const TvEnvironment = memo(function TvEnvironment({ layout }: { layout: L
       ))}
       {church ? <ChurchFurniture zone={church} /> : null}
       {bathroom ? <BathroomStalls zone={bathroom} /> : null}
+      {terreiro ? <TerreiroFurniture zone={terreiro} /> : null}
+      {espirita ? <EspiritaFurniture zone={espirita} /> : null}
       {hasCenter ? <Halo layout={layout} /> : null}
       {hasCenter && layout.flags ? (
         <>

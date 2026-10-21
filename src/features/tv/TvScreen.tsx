@@ -217,7 +217,7 @@ export function TvScreen() {
   const demand = useStableValue(
     useMemo(() => {
       const raw = layoutDemand(view.agents);
-      // Arredonda a espera em blocos de 10 para não refazer a planta a cada pessoa.
+      // Arredonda o transbordo em blocos de 10 para não refazer a planta a cada pessoa.
       return { ...raw, population: Math.ceil(raw.population / 10) * 10 };
     }, [view.agents]),
   );

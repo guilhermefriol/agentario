@@ -13,7 +13,7 @@ const allSpots = (layout: Layout): Spot[] => [
   layout.center.fiscal,
   ...layout.center.visits,
   ...layout.center.stand,
-  ...layout.waiting,
+  ...layout.overflow,
 ];
 
 const zoneAt = (zones: Zone[], x: number, y: number) =>

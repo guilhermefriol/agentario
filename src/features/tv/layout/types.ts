@@ -8,7 +8,7 @@ export type Spot = {
   workoutStyle?: "run" | "lift" | "bike" | "box" | "row" | "stretch";
 };
 
-export type ZoneKind = "project" | "center" | "leisure" | "waiting";
+export type ZoneKind = "project" | "center" | "leisure";
 
 /** Retângulo no canvas (px) que vira piso, placa e paredes da sala. */
 export type Zone = {
@@ -26,7 +26,7 @@ export type Zone = {
   door: { x: number; y: number };
 };
 
-export type LeisureId = "academia" | "banheiros" | "refeitorio" | "descanso" | "igreja";
+export type LeisureId = "academia" | "banheiros" | "refeitorio" | "descanso" | "igreja" | "espirita" | "terreiro";
 
 /** O escritório: um andar com todas as salas de projeto, a sala do Friol e o lazer. */
 export type Layout = {
@@ -52,8 +52,11 @@ export type Layout = {
     throne: { x: number; y: number };
     carpet: { x: number; y: number; w: number; h: number };
   };
-  /** Área de espera: um lugar distinto por pessoa que possa precisar. */
-  waiting: Spot[];
+  /**
+   * Transbordo: um lugar distinto de pé por pessoa que possa precisar (quem passa da lotação da
+   * sala ou não cabe no lazer). Fica na ala do Terreiro de Umbanda, ao lado da gira.
+   */
+  overflow: Spot[];
   flags: { russia: { x: number; y: number }; brazil: { x: number; y: number } } | null;
 };
 

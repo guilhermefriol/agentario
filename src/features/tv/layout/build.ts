@@ -17,7 +17,9 @@ import {
   projectRoomContents,
   projectRoomSize,
   roomWalls,
-  waitingContents,
+  OVERFLOW_ROWS,
+  overflowContents,
+  TERREIRO_GIRA_COLS,
 } from "@/features/tv/layout/rooms";
 import { toNavFurniture } from "@/features/tv/layout/modelBounds";
 import { snapSpots } from "@/features/tv/layout/snap";
@@ -29,11 +31,10 @@ const UNITS_PER_ROW = 9; // deixa passagens verticais nas pontas das fileiras
 const ROWS_PER_SIDE = 3;
 export const MAX_UNITS = UNITS_PER_ROW * ROWS_PER_SIDE * 2;
 const FRIOL_W = 15 * CELL;
-const WAITING_ROWS = LEISURE_H / CELL - 3;
 
 const snapCell = (value: number) => Math.floor(value / CELL) * CELL;
 
-type LayoutParts = Pick<Layout, "seatsByRoom" | "fiscalByRoom" | "leisure" | "center" | "waiting">;
+type LayoutParts = Pick<Layout, "seatsByRoom" | "fiscalByRoom" | "leisure" | "center" | "overflow">;
 
 /** Aplica o encaixe na grade a todos os lugares, preservando a estrutura. */
 export function snapLayoutSpots(
@@ -52,7 +53,7 @@ export function snapLayoutSpots(
     ...roomIds.map((id) => parts.seatsByRoom[id]),
     fiscalIds.map((id) => parts.fiscalByRoom[id]),
     ...leisureIds.map((id) => parts.leisure[id]),
-    parts.waiting,
+    parts.overflow,
   ];
   const snapped = snapSpots(furniture, zones, groups, origins);
   let i = 0;
@@ -66,13 +67,13 @@ export function snapLayoutSpots(
   fiscalIds.forEach((id, k) => (fiscalByRoom[id] = fiscalSpots[k]));
   const leisure = {} as Record<LeisureId, Spot[]>;
   for (const id of leisureIds) leisure[id] = snapped[i++];
-  const waiting = snapped[i++];
+  const overflow = snapped[i++];
   return {
     seatsByRoom,
     fiscalByRoom,
     leisure,
     center: { ...parts.center, friol, fiscal, visits, stand },
-    waiting,
+    overflow,
   };
 }
 
@@ -114,7 +115,7 @@ function packRows(items: RowItem[]): RowItem[][] {
 
 /**
  * O escritório com a sala do Friol no centro do universo: uma faixa central com o lazer, a sala
- * do Friol (no centro do canvas) e a Área de espera; as salas de projeto (acesas e apagadas, em
+ * do Friol (no centro do canvas) e as casas religiosas; as salas de projeto (acesas e apagadas, em
  * ordem estável) em fileiras centralizadas, metade acima e metade abaixo da faixa.
  * Sala com funcionários cadastrados + 1 > 2 ocupa 2 unidades (4 mesas); se passar de MAX_UNITS,
  * todas voltam a 1 unidade.
@@ -180,12 +181,12 @@ export function buildOfficeLayout(
     }
   });
 
-  // Faixa central: [Academia][Banheiros][Refeitório] [FRIOL] [Sala de descanso][Igreja][Área de espera]
+  // Faixa central: [Academia][Banheiros][Refeitório][Sala de descanso] [FRIOL] [Igreja][Casa Espírita][Terreiro]
+  // As três casas religiosas ficam lado a lado; o Terreiro, por último, cresce com a ala de transbordo.
   const label = (id: LeisureId) => LEISURE_ROOMS.find((room) => room.id === id)!.label;
-  const waitingW = Math.max(LEISURE_W, (Math.ceil(Math.max(demand.population, 1) / WAITING_ROWS) + 2) * CELL);
   type BandSpec = { id: string; kind: Zone["kind"]; label: string | null; w: number; leisure?: LeisureId };
-  const left: LeisureId[] = ["academia", "banheiros", "refeitorio"];
-  const right: LeisureId[] = ["descanso", "igreja"];
+  const left: LeisureId[] = ["academia", "banheiros", "refeitorio", "descanso"];
+  const right: LeisureId[] = ["igreja", "espirita", "terreiro"];
   let leftX = friolX;
   const bandZones: Array<{ spec: BandSpec; x: number }> = [];
   for (const id of [...left].reverse()) {
@@ -194,17 +195,26 @@ export function buildOfficeLayout(
   }
   bandZones.push({ spec: { id: "centro", kind: "center", label: null, w: FRIOL_W }, x: friolX });
   let rightX = friolX + FRIOL_W + CELL;
+  const population = Math.max(demand.population, 1);
   for (const id of right) {
-    bandZones.push({ spec: { id: `lazer:${id}`, kind: "leisure", label: label(id), w: LEISURE_W, leisure: id }, x: rightX });
-    rightX += LEISURE_W + CELL;
+    let w = LEISURE_W;
+    if (id === "terreiro") {
+      // Ala de transbordo: uma coluna de pé a cada OVERFLOW_ROWS pessoas, até a borda do canvas.
+      const fitCols = Math.floor((CANVAS_W - 3 * CELL - rightX) / CELL) - TERREIRO_GIRA_COLS - 1;
+      const cols = Math.max(1, Math.min(Math.ceil(population / OVERFLOW_ROWS), fitCols));
+      w = (TERREIRO_GIRA_COLS + cols + 1) * CELL;
+    }
+    bandZones.push({ spec: { id: `lazer:${id}`, kind: "leisure", label: label(id), w, leisure: id }, x: rightX });
+    rightX += w + CELL;
   }
-  bandZones.push({ spec: { id: "espera", kind: "waiting", label: "Área de espera", w: waitingW }, x: rightX });
 
   const leisure = {} as Record<LeisureId, Spot[]>;
   let center: ReturnType<typeof centerContents> | null = null;
   let centerDoor = { x: 0, y: 0 };
   let flags: Layout["flags"] = null;
-  let waiting: Spot[] = [];
+  // Peças desenhadas pelo ambiente da TV que bloqueiam passagem (mesa do Friol, mesa da Casa Espírita).
+  const blockers: FurnitureItem[] = [];
+  let overflow: Spot[] = [];
   for (const { spec, x } of bandZones) {
     const doorX = doorCenterX({ x, w: spec.w });
     // A sala do Friol abre para o sul (ele fica de frente para quem chega e para a câmera).
@@ -232,19 +242,19 @@ export function buildOfficeLayout(
         russia: { x: doorX + 3 * CELL, y: bandBottom + CELL },
         brazil: { x: doorX - 3 * CELL, y: bandBottom + CELL },
       };
-    } else if (spec.kind === "waiting") {
-      waiting = waitingContents(zone, Math.max(demand.population, 1));
     } else if (spec.leisure) {
       const contents = leisureContents(spec.leisure, zone, make);
       furniture.push(...contents.furniture);
+      blockers.push(...(contents.blockers ?? []));
       leisure[spec.leisure] = contents.spots;
+      if (spec.leisure === "terreiro") overflow = overflowContents(zone, population);
     }
   }
   furniture.push(...decorationItems(zones, decor.decoration, { blockingZones: decor.blockingZones }));
 
   const c = center!;
   // A mesa grande do Friol é desenhada pelo ambiente da TV: entra só na navegação.
-  const navFurniture = [...toNavFurniture(furniture), ...c.blockers];
+  const navFurniture = [...toNavFurniture(furniture), ...c.blockers, ...blockers];
   const parts = snapLayoutSpots(
     navFurniture,
     zones,
@@ -262,7 +272,7 @@ export function buildOfficeLayout(
         throne: c.throne,
         carpet: c.carpet,
       },
-      waiting,
+      overflow,
     },
     [centerDoor],
   );

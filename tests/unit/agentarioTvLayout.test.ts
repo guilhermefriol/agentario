@@ -61,7 +61,7 @@ const allSpots = (layout: Layout) => [
   ...layout.center.visits,
   ...layout.center.stand,
   layout.center.fiscal,
-  ...layout.waiting,
+  ...layout.overflow,
 ];
 
 const overlaps = (a: { x: number; y: number; w: number; h: number }, b: typeof a) =>
@@ -80,7 +80,7 @@ function expectValid(layout: Layout) {
   const grid = buildNavGrid(layout.navFurniture);
   const { minX, minY, maxX, maxY } = layout.bounds;
   const outside = allSpots(layout).flatMap((spot) =>
-    [...astar(layout.center.door.x, layout.center.door.y, spot.x, spot.y, grid), ...astar(spot.x, spot.y, layout.waiting[0].x, layout.waiting[0].y, grid)]
+    [...astar(layout.center.door.x, layout.center.door.y, spot.x, spot.y, grid), ...astar(spot.x, spot.y, layout.overflow[0].x, layout.overflow[0].y, grid)]
       .filter((point) => point.x < minX || point.x > maxX || point.y < minY || point.y > maxY),
   );
   expect(outside).toEqual([]);
@@ -109,7 +109,41 @@ describe("escritório (um andar com todas as salas)", () => {
     const below = projects.filter((z) => z.y >= friol.y + friol.h).length;
     expect(above + below).toBe(projects.length);
     expect(Math.abs(above - below)).toBeLessThanOrEqual(10);
-    expect(layout.zones.find((z) => z.kind === "waiting")?.label).toBe("Área de espera");
+    // Sem Área de espera; as três casas religiosas lado a lado à direita do Friol, o Terreiro por último.
+    expect(layout.zones.some((z) => z.label === "Área de espera")).toBe(false);
+    const band = layout.zones.filter((z) => z.y === friol.y).sort((a, b) => a.x - b.x).map((z) => z.label ?? "FRIOL");
+    expect(band).toEqual([
+      "Academia",
+      "Banheiros",
+      "Refeitório",
+      "Sala de descanso",
+      "FRIOL",
+      "Igreja Adventista da I.A. dos Últimos Dias",
+      "Casa Espírita",
+      "Terreiro de Umbanda",
+    ]);
+  });
+
+  it("Terreiro: gira em roda olhando para o centro; ala de transbordo com um lugar por pessoa", () => {
+    const layout = buildLayout(rooms, demand);
+    const terreiro = layout.zones.find((z) => z.id === "lazer:terreiro")!;
+    const gira = layout.leisure.terreiro.slice(0, 8);
+    const cx = terreiro.x + 5 * 25 + 12.5;
+    const cy = terreiro.y + 6 * 25 + 12.5;
+    for (const spot of gira) {
+      // O encaixe na grade não deslocou a roda: cada um olha exatamente para o centro.
+      expect(spot.facing).toBeCloseTo(Math.atan2(cx - spot.x, cy - spot.y));
+      expect(Math.hypot(spot.x - cx, spot.y - cy)).toBeGreaterThan(60);
+      expect(Math.hypot(spot.x - cx, spot.y - cy)).toBeLessThan(80);
+    }
+    for (const population of [1, 40, 130, 230]) {
+      const big = buildLayout(rooms, { ...demand, population });
+      const zone = big.zones.find((z) => z.id === "lazer:terreiro")!;
+      expect(big.overflow.length).toBeGreaterThanOrEqual(population);
+      expect(zone.x + zone.w).toBeLessThanOrEqual(CANVAS_W);
+      for (const s of big.overflow) expect(s.x > zone.x && s.x < zone.x + zone.w && s.y > zone.y && s.y < zone.y + zone.h).toBe(true);
+      expect(layoutIssues(big)).toEqual([]);
+    }
   });
 
   it("cada mesa tem cadeira e computador; quem trabalha senta na cadeira, fora da mesa, olhando o monitor", () => {
@@ -214,11 +248,11 @@ describe("movimento", () => {
     expect(left.length).toBeLessThanOrEqual(Math.floor(litIdle.length * 0.5));
   });
 
-  it("quem passa da lotação da sala vai para a Área de espera (corredores livres)", () => {
+  it("quem passa da lotação da sala vai para a ala de transbordo do Terreiro (corredores livres)", () => {
     const crowd = Array.from({ length: 40 }, (_, i) => person(`w-${i}`, rooms[0].id, "working"));
     const crowdLayout = buildLayout(rooms, layoutDemand(crowd));
     const t = assignTargets({ layout: crowdLayout, rooms, agents: crowd, now });
-    const espera = crowdLayout.zones.find((z) => z.kind === "waiting")!;
+    const espera = crowdLayout.zones.find((z) => z.id === "lazer:terreiro")!;
     const room = crowdLayout.zones.find((z) => z.id === rooms[0].id)!;
     const inside = (z: typeof room, p: { x: number; y: number }) => p.x >= z.x && p.x <= z.x + z.w && p.y >= z.y && p.y <= z.y + z.h;
     for (const target of Object.values(t)) expect(inside(room, target) || inside(espera, target)).toBe(true);
@@ -230,12 +264,12 @@ describe("movimento", () => {
     expect(new Set(keys).size).toBe(keys.length);
   });
 
-  it("lazer cheio transborda para a espera", () => {
+  it("lazer cheio transborda para a ala do Terreiro", () => {
     const crowd = Array.from({ length: 120 }, (_, i) => person(`x-${i}`, rooms[1].id, "idle"));
     const big = buildLayout(rooms, layoutDemand(crowd));
     const t = assignTargets({ layout: big, rooms, agents: crowd, now });
-    const waitingKeys = new Set(big.waiting.map((s) => `${s.x},${s.y}`));
-    expect(Object.values(t).filter((s) => waitingKeys.has(`${s.x},${s.y}`)).length).toBeGreaterThan(0);
+    const overflowKeys = new Set(big.overflow.map((s) => `${s.x},${s.y}`));
+    expect(Object.values(t).filter((s) => overflowKeys.has(`${s.x},${s.y}`)).length).toBeGreaterThan(0);
     const keys = Object.values(t).map((s) => `${s.x},${s.y}`);
     expect(new Set(keys).size).toBe(keys.length);
   });
@@ -270,7 +304,7 @@ describe("demonstração no escritório", () => {
       const z = layout.zones.find((zone) => zone.id === zoneId)!;
       return p.x >= z.x && p.x <= z.x + z.w && p.y >= z.y && p.y <= z.y + z.h;
     };
-    for (const id of ["academia", "banheiros", "refeitorio", "descanso", "igreja"]) {
+    for (const id of ["academia", "banheiros", "refeitorio", "descanso", "igreja", "espirita", "terreiro"]) {
       const crowd = demo.agents.filter((a) => a.leisure === id);
       expect(crowd.length).toBeGreaterThan(0);
       expect(crowd.every((a) => inside(`lazer:${id}`, targets[a.id]))).toBe(true);

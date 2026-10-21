@@ -23,6 +23,8 @@ const LEISURE_CROWD: Array<[LeisureId | "visita", number]> = [
   ["refeitorio", 4],
   ["descanso", 4],
   ["igreja", 6],
+  ["espirita", 4],
+  ["terreiro", 6],
   ["visita", 2],
 ];
 

@@ -48,7 +48,7 @@ export type Decoration = { version: 2; zones: Record<string, ZoneDecoration> };
 
 export const EMPTY_DECORATION: Decoration = { version: 2, zones: {} };
 
-const ZONE_KEY = /^(p-[0-9a-f]{10}|centro|lazer:(academia|banheiros|refeitorio|descanso|igreja))$/;
+const ZONE_KEY = /^(p-[0-9a-f]{10}|centro|lazer:(academia|banheiros|refeitorio|descanso|igreja|espirita|terreiro))$/;
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   Boolean(value && typeof value === "object" && !Array.isArray(value));

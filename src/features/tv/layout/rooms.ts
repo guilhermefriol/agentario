@@ -18,7 +18,14 @@ export const LEISURE_ROOMS: ReadonlyArray<{ id: LeisureId; label: string }> = [
   { id: "refeitorio", label: "Refeitório" },
   { id: "descanso", label: "Sala de descanso" },
   { id: "igreja", label: "Igreja Adventista da I.A. dos Últimos Dias" },
+  { id: "espirita", label: "Casa Espírita" },
+  { id: "terreiro", label: "Terreiro de Umbanda" },
 ];
+
+/** Colunas da gira no Terreiro; depois delas vem a ala de transbordo, que cresce com a população. */
+export const TERREIRO_GIRA_COLS = 10;
+/** Fileiras de pé da ala de transbordo (3 a 10: a entrada sob a porta fica livre). */
+export const OVERFLOW_ROWS = 8;
 
 type Item = Omit<FurnitureItem, "_uid">;
 
@@ -90,7 +97,7 @@ export const accentFor = (id: string) => {
  * (virada para a mesa) logo abaixo, na fileira 3; a pessoa senta na cadeira olhando o monitor.
  * Fileiras: parede (0), mesas (1–2), cadeiras/lugares (3), passagem (4), em pé (5),
  * corredor até a porta (6), parede (7). Mesas a cada 4 colunas, com corredor entre elas.
- * Lotação = mesas + lugares de pé da fileira 5; quem passar disso vai para a Área de espera.
+ * Lotação = mesas + lugares de pé da fileira 5; quem passar disso vai para a ala de transbordo do Terreiro.
  */
 export function projectRoomContents(
   zone: Zone,
@@ -140,12 +147,13 @@ const lookAt = (x: number, y: number, tx: number, ty: number) => Math.atan2(tx -
 /**
  * Móveis e lugares de cada sala de lazer (porta no topo; 10 × 12 células). A entrada
  * (fileiras 1–2 sob a porta) fica livre e sempre sobra uma coluna de passagem.
+ * `blockers` são peças desenhadas pelo ambiente da TV que entram só na navegação.
  */
 export function leisureContents(
   id: LeisureId,
   zone: Zone,
   make: (item: Item) => FurnitureItem,
-): { furniture: FurnitureItem[]; spots: Spot[] } {
+): { furniture: FurnitureItem[]; spots: Spot[]; blockers?: FurnitureItem[] } {
   const { x, y } = zone;
   const at = (c: number, r: number) => ({ x: x + c * CELL, y: y + r * CELL });
   switch (id) {
@@ -237,7 +245,52 @@ export function leisureContents(
       }
       return { furniture: [], spots };
     }
+    case "espirita": {
+      // Plateia sentada olhando para a mesa de palestra (sul); duas pessoas de pé atrás da mesa.
+      const { table } = espiritaPieces(zone);
+      const seats: Spot[] = [];
+      for (const r of [3, 5]) {
+        for (const c of [2, 3, 6, 7]) seats.push({ ...cell(zone, c, r), facing: 0, pose: "sit" });
+      }
+      const furniture = [
+        ...seats.map((p) => make({ type: "chair", ...placeByVisualCenter("chair", p.x, p.y, 0), facing: 0 })),
+        make({ type: "bookshelf", ...placeByVisualCenter("bookshelf", cell(zone, 8, 10).x, cell(zone, 8, 10).y) }),
+      ];
+      const speakers: Spot[] = [3, 6].map((c) => ({ ...cell(zone, c, 10), facing: Math.PI, pose: "stand" }));
+      // A mesa bloqueia só as células 2–7 das fileiras 8–9 (a folga da navegação fica dentro delas).
+      const pad = 16;
+      const blockers = [
+        make({ type: "wall", x: table.x + pad, y: table.y + pad, w: table.w - 2 * pad, h: table.h - 2 * pad }),
+      ];
+      return { furniture, spots: [...seats, ...speakers], blockers };
+    }
+    case "terreiro": {
+      // A gira: roda de pé em volta do centro, todos olhando para o meio; os ogãs tocam os
+      // atabaques no canto sul, de frente para eles.
+      const { giraCenter, atabaques } = terreiroPieces(zone);
+      const ring: Array<[number, number]> = [[0, -3], [2, -2], [3, 0], [2, 2], [0, 3], [-2, 2], [-3, 0], [-2, -2]];
+      const gira: Spot[] = ring.map(([dc, dr]) => {
+        const p = cell(zone, 5 + dc, 6 + dr);
+        return { ...p, facing: lookAt(p.x, p.y, giraCenter.x, giraCenter.y), pose: "stand" };
+      });
+      const ogas: Spot[] = atabaques.map((drum) => ({ x: drum.x, y: drum.y - CELL, facing: 0, pose: "stand" }));
+      return { furniture: [], spots: [...gira, ...ogas] };
+    }
   }
+}
+
+/** Peças da Casa Espírita desenhadas pelo ambiente da TV (mesa de palestra ao sul). */
+export function espiritaPieces(zone: Pick<Zone, "x" | "y">) {
+  return { table: { x: zone.x + 2 * CELL, y: zone.y + 8 * CELL, w: 6 * CELL, h: 2 * CELL } };
+}
+
+/** Peças do Terreiro desenhadas pelo ambiente da TV: congá na parede oeste e três atabaques. */
+export function terreiroPieces(zone: Pick<Zone, "x" | "y">) {
+  return {
+    giraCenter: cell(zone, 5, 6),
+    conga: { x: zone.x + WALL_THICKNESS, y: zone.y + 4 * CELL, w: CELL - WALL_THICKNESS, h: 5 * CELL },
+    atabaques: [1, 2, 3].map((c) => cell(zone, c, 10)),
+  };
 }
 
 /**
@@ -270,13 +323,16 @@ export function centerContents(zone: Zone, make: (item: Item) => FurnitureItem) 
   return { furniture, blockers, friol, visits, stand, fiscal, desk, throne, carpet };
 }
 
-/** Lugares da Área de espera: uma célula por pessoa, em fileiras (porta no topo). */
-export function waitingContents(zone: Zone, count: number): Spot[] {
-  const cols = Math.round(zone.w / CELL) - 2;
-  const rows = Math.round(zone.h / CELL) - 3;
+/**
+ * Ala de transbordo do Terreiro: depois das colunas da gira, uma célula de pé por pessoa, em
+ * colunas de `OVERFLOW_ROWS` (a última coluna da sala é parede).
+ */
+export function overflowContents(zone: Zone, count: number): Spot[] {
+  const cols = Math.round(zone.w / CELL) - TERREIRO_GIRA_COLS - 1;
   const spots: Spot[] = [];
-  for (let i = 0; i < Math.min(count, cols * rows); i += 1) {
-    spots.push({ ...cell(zone, 1 + (i % cols), 2 + Math.floor(i / cols)), facing: 0, pose: "stand" });
+  for (let i = 0; i < Math.min(count, cols * OVERFLOW_ROWS); i += 1) {
+    const c = TERREIRO_GIRA_COLS + Math.floor(i / OVERFLOW_ROWS);
+    spots.push({ ...cell(zone, c, 3 + (i % OVERFLOW_ROWS)), facing: 0, pose: "stand" });
   }
   return spots;
 }

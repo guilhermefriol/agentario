@@ -59,7 +59,7 @@ const toTarget = (spot: Spot, spawnFrom?: { x: number; y: number }): AgentDirect
  * Decide o alvo de cada personagem:
  * trabalhando → mesa da sala; parado em sala apagada → lazer (todos);
  * parado em sala acesa → até 50% no lazer (troca a cada 4 min); algumas visitas curtas ao Friol;
- * quem não couber no lazer vai para a área de espera.
+ * quem não couber no lazer vai para a ala de transbordo do Terreiro.
  */
 export function assignTargets(input: MovementInput): Record<string, AgentDirectedTarget> {
   const { layout, rooms, agents, now, demo = false, initialIds } = input;
@@ -118,7 +118,7 @@ export function assignTargets(input: MovementInput): Record<string, AgentDirecte
   }
 
   // Quem fica: mesas da própria sala, em ordem estável (quem trabalha primeiro). Quem passar da
-  // lotação da sala vai para a Área de espera (os corredores ficam livres).
+  // lotação da sala vai para a ala de transbordo do Terreiro (os corredores ficam livres).
   const overflow: AgentarioAgent[] = [];
   for (const [roomId, people] of stayByRoom) {
     const seats = layout.seatsByRoom[roomId] ?? [];
@@ -143,13 +143,13 @@ export function assignTargets(input: MovementInput): Record<string, AgentDirecte
       targets[agent.id] = toTarget(spot, arriving(agent.id));
     });
 
-  // Lazer: sala preferida por hash, com transbordo para as outras e depois para a espera.
+  // Lazer: sala preferida por hash, com transbordo para as outras e depois para a ala do Terreiro.
   const used = new Map<string, number>();
-  let waitingIndex = 0;
+  let overflowIndex = 0;
   let visits = 0;
   for (const agent of overflow) {
-    targets[agent.id] = toTarget(layout.waiting[waitingIndex % Math.max(layout.waiting.length, 1)], arriving(agent.id));
-    waitingIndex += 1;
+    targets[agent.id] = toTarget(layout.overflow[overflowIndex % Math.max(layout.overflow.length, 1)], arriving(agent.id));
+    overflowIndex += 1;
   }
   for (const agent of leavers) {
     const wantsVisit = agent.leisure === "visita";
@@ -178,8 +178,8 @@ export function assignTargets(input: MovementInput): Record<string, AgentDirecte
       }
     }
     if (!spot) {
-      spot = layout.waiting[waitingIndex % Math.max(layout.waiting.length, 1)];
-      waitingIndex += 1;
+      spot = layout.overflow[overflowIndex % Math.max(layout.overflow.length, 1)];
+      overflowIndex += 1;
     }
     targets[agent.id] = toTarget(spot, arriving(agent.id));
   }
