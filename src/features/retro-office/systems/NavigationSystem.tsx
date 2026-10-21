@@ -105,8 +105,10 @@ export function applyAgentCollisionBumps({
       facing: Math.atan2(fx || sx, fy || sy),
       state: "standing",
       path: [],
-      targetX: escapeTarget.x,
-      targetY: escapeTarget.y,
+      // Directed agents keep their own destination: the roam points belong to the
+      // default office and fall outside custom layouts.
+      targetX: moved[i].directed ? moved[i].targetX : escapeTarget.x,
+      targetY: moved[i].directed ? moved[i].targetY : escapeTarget.y,
       bumpedUntil: now + BUMP_FREEZE_MS,
       bumpTalkUntil: now + BUMP_FREEZE_MS,
     };

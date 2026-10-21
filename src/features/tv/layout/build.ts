@@ -269,17 +269,39 @@ export function buildOfficeLayout(
 
   // Limites recortados ao conteúdo (a câmera enquadra só o que existe).
   const pad = 3 * CELL;
+  const bounds = {
+    minX: Math.max(0, Math.min(...zones.map((z) => z.x)) - pad),
+    minY: Math.max(0, Math.min(...zones.map((z) => z.y)) - pad),
+    maxX: Math.min(CANVAS_W, Math.max(...zones.map((z) => z.x + z.w)) + pad),
+    maxY: Math.min(CANVAS_H, Math.max(...zones.map((z) => z.y + z.h)) + pad),
+  };
+  // Paredes invisíveis em volta do piso: nenhum caminho sai do mapa.
+  navFurniture.push(...perimeterBlockers(bounds));
   return {
     furniture,
     navFurniture,
-    bounds: {
-      minX: Math.max(0, Math.min(...zones.map((z) => z.x)) - pad),
-      minY: Math.max(0, Math.min(...zones.map((z) => z.y)) - pad),
-      maxX: Math.min(CANVAS_W, Math.max(...zones.map((z) => z.x + z.w)) + pad),
-      maxY: Math.min(CANVAS_H, Math.max(...zones.map((z) => z.y + z.h)) + pad),
-    },
+    bounds,
     zones,
     ...parts,
     flags,
   };
+}
+
+/** Faixas bloqueadas do lado de fora dos limites (só navegação; o canvas inteiro fica coberto). */
+function perimeterBlockers(bounds: Layout["bounds"]): FurnitureItem[] {
+  const wall = (id: string, x: number, y: number, w: number, h: number): FurnitureItem => ({
+    _uid: `perimetro:${id}`,
+    type: "wall",
+    x,
+    y,
+    w,
+    h,
+  });
+  const { minX, minY, maxX, maxY } = bounds;
+  return [
+    wall("n", 0, 0, CANVAS_W, minY),
+    wall("s", 0, maxY, CANVAS_W, CANVAS_H - maxY),
+    wall("o", 0, minY, minX, maxY - minY),
+    wall("l", maxX, minY, CANVAS_W - maxX, maxY - minY),
+  ].filter((item) => (item.w ?? 0) > 0 && (item.h ?? 0) > 0);
 }

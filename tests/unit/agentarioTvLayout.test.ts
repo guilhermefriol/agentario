@@ -76,6 +76,14 @@ function expectValid(layout: Layout) {
   }
   expect(layoutIssues(layout)).toEqual([]);
   expect(allSpots(layout).filter((spot) => !reachable(layout, layout.center.door, spot))).toEqual([]);
+  // Nenhum caminho passa por fora do piso desenhado (ninguém some no vazio).
+  const grid = buildNavGrid(layout.navFurniture);
+  const { minX, minY, maxX, maxY } = layout.bounds;
+  const outside = allSpots(layout).flatMap((spot) =>
+    [...astar(layout.center.door.x, layout.center.door.y, spot.x, spot.y, grid), ...astar(spot.x, spot.y, layout.waiting[0].x, layout.waiting[0].y, grid)]
+      .filter((point) => point.x < minX || point.x > maxX || point.y < minY || point.y > maxY),
+  );
+  expect(outside).toEqual([]);
 }
 
 describe("escritório (um andar com todas as salas)", () => {
