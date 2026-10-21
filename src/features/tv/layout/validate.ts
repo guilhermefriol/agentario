@@ -48,5 +48,5 @@ function checkPlane(
  * alcançável. Lista vazia = layout válido.
  */
 export function layoutIssues(layout: Layout): LayoutIssue[] {
-  return checkPlane(layout.furniture, layout.zones, allSpots(layout), [layout.center.door]);
+  return checkPlane(layout.navFurniture, layout.zones, allSpots(layout), [layout.center.door]);
 }

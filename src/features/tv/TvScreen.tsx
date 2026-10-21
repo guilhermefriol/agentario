@@ -266,6 +266,7 @@ export function TvScreen() {
         officeTitle="Escritório"
         officeTitleLoaded
         furniture={layout.furniture}
+        navFurniture={layout.navFurniture}
         targetByAgentId={targets}
         cameraOverride={camera}
         customEnvironment={environment}

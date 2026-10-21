@@ -114,7 +114,9 @@ export function assignTargets(input: MovementInput): Record<string, AgentDirecte
     else centerStay.push(agent);
   }
 
-  // Quem fica: mesas da própria sala, em ordem estável (quem trabalha primeiro).
+  // Quem fica: mesas da própria sala, em ordem estável (quem trabalha primeiro). Quem passar da
+  // lotação da sala vai para a Área de espera (os corredores ficam livres).
+  const overflow: AgentarioAgent[] = [];
   for (const [roomId, people] of stayByRoom) {
     const seats = layout.seatsByRoom[roomId] ?? [];
     const ordered = [...people].sort(
@@ -122,7 +124,11 @@ export function assignTargets(input: MovementInput): Record<string, AgentDirecte
         Number(b.status === "working") - Number(a.status === "working") || a.id.localeCompare(b.id),
     );
     ordered.forEach((agent, index) => {
-      const seat = seats[index] ?? layout.fiscalByRoom[roomId] ?? layout.center.fiscal;
+      const seat = seats[index];
+      if (!seat) {
+        overflow.push(agent);
+        return;
+      }
       const walksIn = agent.kind === "intern" && !agent.id.startsWith("demo:");
       targets[agent.id] = toTarget(seat, walksIn ? centerDoor : arriving(agent.id));
     });
@@ -138,6 +144,10 @@ export function assignTargets(input: MovementInput): Record<string, AgentDirecte
   const used = new Map<string, number>();
   let waitingIndex = 0;
   let visits = 0;
+  for (const agent of overflow) {
+    targets[agent.id] = toTarget(layout.waiting[waitingIndex % Math.max(layout.waiting.length, 1)], arriving(agent.id));
+    waitingIndex += 1;
+  }
   for (const agent of leavers) {
     if (
       visits < MAX_VISITS &&

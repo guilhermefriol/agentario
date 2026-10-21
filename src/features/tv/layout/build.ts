@@ -6,112 +6,32 @@ import {
   LEISURE_H,
   LEISURE_ROOMS,
   LEISURE_W,
+  ROOM_H,
+  UNIT_STEP,
+  accentFor,
   centerContents,
+  desksFor,
   doorCenterX,
   itemFactory,
   leisureContents,
   projectRoomContents,
   projectRoomSize,
   roomWalls,
+  waitingContents,
 } from "@/features/tv/layout/rooms";
+import { toNavFurniture } from "@/features/tv/layout/modelBounds";
 import { snapSpots } from "@/features/tv/layout/snap";
 import type { Layout, LayoutDemand, LayoutRoom, LeisureId, Spot, Zone } from "@/features/tv/layout/types";
 
 export const MARGIN = 2 * CELL;
-export const GAP = CELL;
-const ROW_CORRIDOR = 3 * CELL; // a folga das paredes fecha um vão de uma célula
-const USABLE = CANVAS_W - 2 * MARGIN;
-const MAX_COLS = 4;
+const CORRIDOR = 3 * CELL; // a folga das paredes fecha um vão de uma célula
+const UNITS_PER_ROW = 9; // deixa passagens verticais nas pontas das fileiras
+const ROWS_PER_SIDE = 3;
+export const MAX_UNITS = UNITS_PER_ROW * ROWS_PER_SIDE * 2;
+const FRIOL_W = 15 * CELL;
+const WAITING_ROWS = LEISURE_H / CELL - 3;
 
-/** Coloca retângulos da esquerda para a direita, quebrando a linha na largura útil. */
-export function flow(sizes: Array<{ w: number; h: number }>, top: number, rowGap: number) {
-  const positions: Array<{ x: number; y: number }> = [];
-  let x = MARGIN;
-  let y = top;
-  let rowH = 0;
-  for (const size of sizes) {
-    if (x > MARGIN && x + size.w > MARGIN + USABLE) {
-      x = MARGIN;
-      y += rowH + rowGap;
-      rowH = 0;
-    }
-    positions.push({ x, y });
-    x += size.w + GAP;
-    rowH = Math.max(rowH, size.h);
-  }
-  return { positions, bottom: sizes.length ? y + rowH : top };
-}
-
-/** Lugares de espera, um por célula, em fileiras de corredor. */
-export function waitingSpots(count: number, top: number): { spots: Spot[]; bottom: number } {
-  const perRow = Math.floor(USABLE / CELL) - 2;
-  const rows = Math.max(1, Math.ceil(count / perRow));
-  const spots: Spot[] = [];
-  for (let i = 0; i < count; i += 1) {
-    spots.push({
-      x: MARGIN + CELL + (i % perRow) * CELL + CELL / 2,
-      y: top + Math.floor(i / perRow) * CELL + CELL / 2,
-      facing: 0,
-      pose: "stand",
-    });
-  }
-  return { spots, bottom: top + rows * CELL };
-}
-
-/** Fileira centralizada com a sala do Friol e as 5 salas de lazer, portas para o corredor de cima. */
-export function bottomRow(top: number) {
-  const zones: Zone[] = [];
-  const furniture: FurnitureItem[] = [];
-  const leisure = {} as Record<LeisureId, Spot[]>;
-  const ids = ["centro", ...LEISURE_ROOMS.map((room) => room.id)] as const;
-  const rowWidth = ids.length * LEISURE_W + (ids.length - 1) * GAP;
-  const left = MARGIN + Math.floor((USABLE - rowWidth) / 2 / CELL) * CELL;
-  let center: ReturnType<typeof centerContents> | null = null;
-  let flags: Layout["flags"] = null;
-  let centerDoor = { x: 0, y: 0 };
-
-  ids.forEach((id, index) => {
-    const x = left + index * (LEISURE_W + GAP);
-    const doorX = doorCenterX({ x, w: LEISURE_W });
-    const zone: Zone = {
-      id: id === "centro" ? "centro" : `lazer:${id}`,
-      kind: id === "centro" ? "center" : "leisure",
-      label: id === "centro" ? null : LEISURE_ROOMS.find((room) => room.id === id)!.label,
-      x,
-      y: top,
-      w: LEISURE_W,
-      h: LEISURE_H,
-      lit: true,
-      door: { x: doorX, y: top - CELL / 2 },
-    };
-    const make = itemFactory(zone.id);
-    zones.push(zone);
-    furniture.push(...roomWalls(zone, "top", make));
-    if (id === "centro") {
-      center = centerContents(zone, make);
-      furniture.push(...center.furniture);
-      centerDoor = zone.door;
-      // Do lado de fora da porta, para quem olha a porta: Rússia à direita (oeste), Brasil à esquerda (leste).
-      flags = {
-        russia: { x: doorX - 3 * CELL, y: top - CELL },
-        brazil: { x: doorX + 3 * CELL, y: top - CELL },
-      };
-    } else {
-      const contents = leisureContents(id, zone, make);
-      furniture.push(...contents.furniture);
-      leisure[id] = contents.spots;
-    }
-  });
-  const c = center!;
-  return {
-    zones,
-    furniture,
-    leisure,
-    center: { friol: c.friol, visits: c.visits, stand: c.stand, fiscal: c.fiscal, door: centerDoor },
-    flags,
-    bottom: top + LEISURE_H,
-  };
-}
+const snapCell = (value: number) => Math.floor(value / CELL) * CELL;
 
 type LayoutParts = Pick<Layout, "seatsByRoom" | "fiscalByRoom" | "leisure" | "center" | "waiting">;
 
@@ -164,75 +84,190 @@ export type DecorationInput = {
 
 export const NO_DECORATION: DecorationInput = { decoration: EMPTY_DECORATION, blockingZones: "none" };
 
-const colsFor = (room: LayoutRoom, demand: LayoutDemand, maxCols: number) =>
-  Math.min(Math.max(demand.colsByRoom[room.id] ?? 1, 1), maxCols);
+type RowItem = { room: LayoutRoom; units: 1 | 2 };
 
 /**
- * O escritório: um andar com todas as salas (acesas e apagadas) em ordem estável, um corredor com
- * a área de espera e, embaixo, a sala do Friol e o lazer. A largura das salas vem dos funcionários
- * cadastrados; se não couber, o teto de mesas por sala diminui até caber (quem sobra fica de pé).
+ * Fileiras de um lado da faixa central (em ordem): o menor número de fileiras de até
+ * UNITS_PER_ROW unidades, com as salas espalhadas por igual entre elas.
+ */
+function packRows(items: RowItem[]): RowItem[][] {
+  const total = items.reduce((sum, item) => sum + item.units, 0);
+  if (total === 0) return [];
+  const rowCount = Math.ceil(total / UNITS_PER_ROW);
+  const perRow = Math.ceil(total / rowCount);
+  const rows: RowItem[][] = [];
+  let current: RowItem[] = [];
+  let used = 0;
+  for (const item of items) {
+    const limit = rows.length === rowCount - 1 ? UNITS_PER_ROW : perRow;
+    if (used + item.units > limit && current.length > 0) {
+      rows.push(current);
+      current = [];
+      used = 0;
+    }
+    current.push(item);
+    used += item.units;
+  }
+  if (current.length > 0) rows.push(current);
+  return rows;
+}
+
+/**
+ * O escritório com a sala do Friol no centro do universo: uma faixa central com o lazer, a sala
+ * do Friol (no centro do canvas) e a Área de espera; as salas de projeto (acesas e apagadas, em
+ * ordem estável) em fileiras centralizadas, metade acima e metade abaixo da faixa.
+ * Sala com funcionários cadastrados + 1 > 2 ocupa 2 unidades (4 mesas); se passar de MAX_UNITS,
+ * todas voltam a 1 unidade.
  */
 export function buildOfficeLayout(
   rooms: LayoutRoom[],
   demand: LayoutDemand,
   decor: DecorationInput = NO_DECORATION,
 ): Layout {
-  const waitingRows = Math.ceil(Math.max(demand.population, 1) / (Math.floor(USABLE / CELL) - 2));
-  const below = CELL + waitingRows * CELL + 2 * CELL + LEISURE_H + MARGIN;
-  const roomsBottom = (maxCols: number) =>
-    flow(rooms.map((room) => projectRoomSize(colsFor(room, demand, maxCols))), MARGIN, ROW_CORRIDOR).bottom;
-  const maxCols = [MAX_COLS, 3, 2, 1].find((cols) => roomsBottom(cols) + below <= CANVAS_H) ?? 1;
+  const wantsTwo = (room: LayoutRoom) => (demand.colsByRoom[room.id] ?? 1) > desksFor(1);
+  const totalUnits = rooms.reduce((sum, room) => sum + (wantsTwo(room) ? 2 : 1), 0);
+  const unitsOf = (room: LayoutRoom): 1 | 2 => (totalUnits <= MAX_UNITS && wantsTwo(room) ? 2 : 1);
+  // Metade das unidades acima da faixa central e metade abaixo (ordem alfabética mantida).
+  const items: RowItem[] = rooms.map((room) => ({ room, units: unitsOf(room) }));
+  const half = Math.ceil(items.reduce((sum, item) => sum + item.units, 0) / 2);
+  let acc = 0;
+  const split = items.findIndex((item) => (acc += item.units) > half);
+  const cut = split === -1 ? items.length : split;
+  const aboveRows = packRows(items.slice(0, cut));
+  const rows = [...aboveRows, ...packRows(items.slice(cut))];
+  const aboveCount = aboveRows.length;
 
-  const sizes = rooms.map((room) => projectRoomSize(colsFor(room, demand, maxCols)));
-  const placed = flow(sizes, MARGIN, ROW_CORRIDOR);
+  // Faixa central: o centro da sala do Friol fica no centro do canvas.
+  const bandTop = snapCell(CANVAS_H / 2 - LEISURE_H / 2);
+  const bandBottom = bandTop + LEISURE_H;
+  const friolX = snapCell(CANVAS_W / 2 - FRIOL_W / 2);
+
   const zones: Zone[] = [];
   const furniture: FurnitureItem[] = [];
   const seatsByRoom: Record<string, Spot[]> = {};
   const fiscalByRoom: Record<string, Spot> = {};
 
-  rooms.forEach((room, index) => {
-    const { x, y } = placed.positions[index];
-    const { w, h } = sizes[index];
-    const zone: Zone = {
-      id: room.id,
-      kind: "project",
-      label: room.label,
-      x,
-      y,
-      w,
-      h,
-      lit: room.lit,
-      door: { x: doorCenterX({ x, w }), y: y + h + CELL / 2 },
-    };
-    const make = itemFactory(room.id);
-    zones.push(zone);
-    furniture.push(...roomWalls(zone, "bottom", make));
-    const need = Math.max(demand.seatsByRoom[room.id] ?? 0, 1);
-    const contents = projectRoomContents(zone, colsFor(room, demand, maxCols), need, make);
-    furniture.push(...contents.furniture);
-    seatsByRoom[room.id] = contents.seats;
-    fiscalByRoom[room.id] = contents.fiscal;
+  rows.forEach((row, index) => {
+    const rowWidth = row.reduce((sum, item) => sum + item.units * UNIT_STEP, 0) - CELL;
+    const top =
+      index < aboveCount
+        ? bandTop - CORRIDOR - (aboveCount - index) * (ROOM_H + CORRIDOR) + CORRIDOR
+        : bandBottom + CORRIDOR + (index - aboveCount) * (ROOM_H + CORRIDOR);
+    let x = snapCell((CANVAS_W - rowWidth) / 2);
+    for (const { room, units } of row) {
+      const { w, h } = projectRoomSize(units);
+      const zone: Zone = {
+        id: room.id,
+        kind: "project",
+        label: room.label,
+        x,
+        y: top,
+        w,
+        h,
+        lit: room.lit,
+        accent: accentFor(room.id),
+        door: { x: doorCenterX({ x, w }), y: top + h + CELL / 2 },
+      };
+      const make = itemFactory(room.id);
+      zones.push(zone);
+      furniture.push(...roomWalls(zone, "bottom", make));
+      const need = Math.max(demand.seatsByRoom[room.id] ?? 0, 1);
+      const contents = projectRoomContents(zone, desksFor(units), need, make);
+      furniture.push(...contents.furniture);
+      seatsByRoom[room.id] = contents.seats;
+      fiscalByRoom[room.id] = contents.fiscal;
+      x += w + CELL;
+    }
   });
 
-  const waiting = waitingSpots(Math.max(demand.population, 1), placed.bottom + CELL);
-  const bottom = bottomRow(waiting.bottom + 2 * CELL);
-  zones.push(...bottom.zones);
-  furniture.push(...bottom.furniture);
+  // Faixa central: [Academia][Banheiros][Refeitório] [FRIOL] [Sala de descanso][Igreja][Área de espera]
+  const label = (id: LeisureId) => LEISURE_ROOMS.find((room) => room.id === id)!.label;
+  const waitingW = Math.max(LEISURE_W, (Math.ceil(Math.max(demand.population, 1) / WAITING_ROWS) + 2) * CELL);
+  type BandSpec = { id: string; kind: Zone["kind"]; label: string | null; w: number; leisure?: LeisureId };
+  const left: LeisureId[] = ["academia", "banheiros", "refeitorio"];
+  const right: LeisureId[] = ["descanso", "igreja"];
+  let leftX = friolX;
+  const bandZones: Array<{ spec: BandSpec; x: number }> = [];
+  for (const id of [...left].reverse()) {
+    leftX -= CELL + LEISURE_W;
+    bandZones.unshift({ spec: { id: `lazer:${id}`, kind: "leisure", label: label(id), w: LEISURE_W, leisure: id }, x: leftX });
+  }
+  bandZones.push({ spec: { id: "centro", kind: "center", label: null, w: FRIOL_W }, x: friolX });
+  let rightX = friolX + FRIOL_W + CELL;
+  for (const id of right) {
+    bandZones.push({ spec: { id: `lazer:${id}`, kind: "leisure", label: label(id), w: LEISURE_W, leisure: id }, x: rightX });
+    rightX += LEISURE_W + CELL;
+  }
+  bandZones.push({ spec: { id: "espera", kind: "waiting", label: "Área de espera", w: waitingW }, x: rightX });
+
+  const leisure = {} as Record<LeisureId, Spot[]>;
+  let center: ReturnType<typeof centerContents> | null = null;
+  let centerDoor = { x: 0, y: 0 };
+  let flags: Layout["flags"] = null;
+  let waiting: Spot[] = [];
+  for (const { spec, x } of bandZones) {
+    const doorX = doorCenterX({ x, w: spec.w });
+    const zone: Zone = {
+      id: spec.id,
+      kind: spec.kind,
+      label: spec.label,
+      x,
+      y: bandTop,
+      w: spec.w,
+      h: LEISURE_H,
+      lit: true,
+      door: { x: doorX, y: bandTop - CELL / 2 },
+    };
+    const make = itemFactory(zone.id);
+    zones.push(zone);
+    furniture.push(...roomWalls(zone, "top", make));
+    if (spec.kind === "center") {
+      center = centerContents(zone, make);
+      furniture.push(...center.furniture);
+      centerDoor = zone.door;
+      // Do lado de fora da porta, para quem olha a porta: Rússia à direita (oeste), Brasil à esquerda (leste).
+      flags = {
+        russia: { x: doorX - 3 * CELL, y: bandTop - CELL },
+        brazil: { x: doorX + 3 * CELL, y: bandTop - CELL },
+      };
+    } else if (spec.kind === "waiting") {
+      waiting = waitingContents(zone, Math.max(demand.population, 1));
+    } else if (spec.leisure) {
+      const contents = leisureContents(spec.leisure, zone, make);
+      furniture.push(...contents.furniture);
+      leisure[spec.leisure] = contents.spots;
+    }
+  }
   furniture.push(...decorationItems(zones, decor.decoration, { blockingZones: decor.blockingZones }));
 
+  const c = center!;
+  const navFurniture = toNavFurniture(furniture);
   const parts = snapLayoutSpots(
-    furniture,
+    navFurniture,
     zones,
-    { seatsByRoom, fiscalByRoom, leisure: bottom.leisure, center: bottom.center, waiting: waiting.spots },
-    [bottom.center.door],
+    {
+      seatsByRoom,
+      fiscalByRoom,
+      leisure,
+      center: { friol: c.friol, visits: c.visits, stand: c.stand, fiscal: c.fiscal, door: centerDoor },
+      waiting,
+    },
+    [centerDoor],
   );
+
   // Limites recortados ao conteúdo (a câmera enquadra só o que existe).
-  const maxX = Math.max(...zones.map((zone) => zone.x + zone.w));
+  const pad = 3 * CELL;
   return {
     furniture,
-    bounds: { minX: 0, minY: 0, maxX: Math.min(CANVAS_W, maxX + MARGIN), maxY: bottom.bottom + MARGIN },
+    navFurniture,
+    bounds: {
+      minX: Math.max(0, Math.min(...zones.map((z) => z.x)) - pad),
+      minY: Math.max(0, Math.min(...zones.map((z) => z.y)) - pad),
+      maxX: Math.min(CANVAS_W, Math.max(...zones.map((z) => z.x + z.w)) + pad),
+      maxY: Math.min(CANVAS_H, Math.max(...zones.map((z) => z.y + z.h)) + pad),
+    },
     zones,
     ...parts,
-    flags: bottom.flags,
+    flags,
   };
 }

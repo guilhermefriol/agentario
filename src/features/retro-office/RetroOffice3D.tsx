@@ -2352,6 +2352,7 @@ export function RetroOffice3D({
   animationState = null,
   readOnly = false,
   furniture: externalFurniture,
+  navFurniture,
   targetByAgentId,
   cameraOverride,
   customEnvironment,
@@ -2471,6 +2472,8 @@ export function RetroOffice3D({
   readOnly?: boolean;
   /** Layout gerado por fora: sem localStorage, sem injetores e sem gravação. */
   furniture?: FurnitureItem[];
+  /** O que bloqueia passagem, se diferente de `furniture` (bloqueio alinhado ao desenho dos modelos). */
+  navFurniture?: FurnitureItem[];
   /** Modo dirigido: alvo explícito por agente (desliga holds e passeio aleatório). */
   targetByAgentId?: Record<string, AgentDirectedTarget>;
   /** Enquadramento da câmera (alvo em px do canvas e zoom ortográfico). */
@@ -2929,10 +2932,11 @@ export function RetroOffice3D({
 
   // Keep a stable ref to furniture so the tick callback can read it without
   // being recreated every time furniture changes.
-  const furnitureRef = useRef<FurnitureItem[]>(furniture);
+  // Navegação: por padrão a própria lista de móveis; a TV passa uma lista alinhada ao desenho.
+  const furnitureRef = useRef<FurnitureItem[]>(navFurniture ?? furniture);
   useEffect(() => {
-    furnitureRef.current = furniture;
-  }, [furniture]);
+    furnitureRef.current = navFurniture ?? furniture;
+  }, [furniture, navFurniture]);
 
   useEffect(() => {
     const intervalId = window.setInterval(() => {

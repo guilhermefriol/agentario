@@ -5,6 +5,7 @@ import { astar, buildNavGrid } from "@/features/retro-office/core/navigation";
 import type { AgentarioAgent } from "@/features/tv/agentarioAgents";
 import { applyDemo } from "@/features/tv/demo";
 import { buildLayout, layoutIssues, type Layout, type LayoutRoom, type Spot } from "@/features/tv/layout";
+import { visualRect } from "@/features/tv/layout/modelBounds";
 import { LEISURE_ROOMS } from "@/features/tv/layout/rooms";
 import { assignTargets, layoutDemand } from "@/features/tv/movement";
 import { fitCamera, isNight } from "@/features/tv/view";
@@ -46,7 +47,7 @@ const people: AgentarioAgent[] = [
 const demand = layoutDemand(people);
 
 function reachable(layout: Layout, from: { x: number; y: number }, spot: Spot) {
-  const grid = buildNavGrid(layout.furniture);
+  const grid = buildNavGrid(layout.navFurniture);
   if (Math.hypot(from.x - spot.x, from.y - spot.y) < 1) return true;
   return astar(from.x, from.y, spot.x, spot.y, grid).length > 0;
 }
@@ -89,17 +90,56 @@ describe("escritório (um andar com todas as salas)", () => {
     expectValid(layout);
   });
 
+  it("sala do Friol no centro do canvas, salas de projeto acima e abaixo da faixa central", () => {
+    const layout = buildLayout(rooms, demand);
+    const friol = layout.zones.find((z) => z.kind === "center")!;
+    expect(Math.abs(friol.x + friol.w / 2 - CANVAS_W / 2)).toBeLessThanOrEqual(12.5);
+    expect(Math.abs(friol.y + friol.h / 2 - CANVAS_H / 2)).toBeLessThanOrEqual(12.5);
+    const projects = layout.zones.filter((z) => z.kind === "project");
+    const above = projects.filter((z) => z.y + z.h <= friol.y).length;
+    const below = projects.filter((z) => z.y >= friol.y + friol.h).length;
+    expect(above + below).toBe(projects.length);
+    expect(Math.abs(above - below)).toBeLessThanOrEqual(10);
+    expect(layout.zones.find((z) => z.kind === "waiting")?.label).toBe("Área de espera");
+  });
+
+  it("cada mesa tem cadeira e computador; quem trabalha senta na cadeira, fora da mesa, olhando o monitor", () => {
+    const layout = buildLayout(rooms, demand);
+    const desks = layout.furniture.filter((f) => f.type === "desk_cubicle");
+    const chairs = layout.furniture.filter((f) => f.type === "chair").map((c) => visualRect(c)!);
+    const computers = layout.furniture.filter((f) => f.type === "computer").map((c) => visualRect(c)!);
+    const deskRects = desks.map((d) => visualRect(d)!);
+    const inside = (r: { x: number; y: number; w: number; h: number }, p: { x: number; y: number }) =>
+      p.x >= r.x && p.x <= r.x + r.w && p.y >= r.y && p.y <= r.y + r.h;
+    // Computador desenhado em cima de cada mesa.
+    for (const desk of deskRects) {
+      expect(computers.some((c) => c.x >= desk.x && c.x + c.w <= desk.x + desk.w && c.y >= desk.y && c.y + c.h <= desk.y + desk.h)).toBe(true);
+    }
+    const sitting = Object.values(layout.seatsByRoom).flat().filter((s) => s.pose === "sit");
+    expect(sitting).toHaveLength(desks.length);
+    for (const seat of sitting) {
+      expect(seat.facing).toBe(Math.PI);
+      expect(chairs.some((chair) => inside(chair, seat))).toBe(true);
+      expect(deskRects.some((desk) => inside(desk, seat))).toBe(false);
+    }
+  });
+
   it("sala com mais funcionários ganha mais mesas", () => {
     const layout = buildLayout(rooms, demand);
     const width = (id: string) => layout.zones.find((z) => z.id === id)!.w;
     expect(width(rooms[0].id)).toBeGreaterThan(width(rooms[1].id));
   });
 
-  it("pior caso (todas as salas pedindo muitas mesas) ainda cabe, reduzindo o teto de mesas", () => {
+  it("pior caso (todas as salas pedindo muitas mesas e sala lotada) ainda cabe e é alcançável", () => {
     const colsByRoom = Object.fromEntries(rooms.map((room) => [room.id, 9]));
-    const seatsByRoom = Object.fromEntries(rooms.map((room) => [room.id, 9]));
-    const layout = buildLayout(rooms, { colsByRoom, seatsByRoom, population: 400 });
+    const seatsByRoom = Object.fromEntries(rooms.map((room) => [room.id, 30]));
+    const layout = buildLayout(rooms, { colsByRoom, seatsByRoom, population: 120 });
     expectValid(layout);
+  });
+
+  it("no limite de 54 salas ainda cabe", () => {
+    const many = Array.from({ length: 54 }, (_, i) => ({ id: `p-${String(i).padStart(10, "0")}`, label: `P${i}`, lit: false }));
+    expectValid(buildLayout(many, { colsByRoom: {}, seatsByRoom: {}, population: 60 }));
   });
 
   it("a planta não muda quando sessões entram e saem", () => {
@@ -150,6 +190,17 @@ describe("movimento", () => {
     expect(left.length).toBeLessThanOrEqual(Math.floor(litIdle.length * 0.5));
   });
 
+  it("quem passa da lotação da sala vai para a Área de espera (corredores livres)", () => {
+    const crowd = Array.from({ length: 40 }, (_, i) => person(`w-${i}`, rooms[0].id, "working"));
+    const crowdLayout = buildLayout(rooms, layoutDemand(crowd));
+    const t = assignTargets({ layout: crowdLayout, rooms, agents: crowd, now });
+    const espera = crowdLayout.zones.find((z) => z.kind === "waiting")!;
+    const room = crowdLayout.zones.find((z) => z.id === rooms[0].id)!;
+    const inside = (z: typeof room, p: { x: number; y: number }) => p.x >= z.x && p.x <= z.x + z.w && p.y >= z.y && p.y <= z.y + z.h;
+    for (const target of Object.values(t)) expect(inside(room, target) || inside(espera, target)).toBe(true);
+    expect(Object.values(t).some((target) => inside(espera, target))).toBe(true);
+  });
+
   it("ninguém divide o mesmo lugar", () => {
     const keys = Object.values(targets).map((t) => `${t.x},${t.y}`);
     expect(new Set(keys).size).toBe(keys.length);
@@ -196,6 +247,7 @@ describe("vista", () => {
   it("enquadra o layout com zoom positivo e menor para layouts maiores", () => {
     const small = fitCamera({ minX: 0, minY: 0, maxX: 600, maxY: 400 }, { width: 1920, height: 1080 });
     const big = fitCamera({ minX: 0, minY: 0, maxX: 3200, maxY: 1600 }, { width: 1920, height: 1080 });
+    expect(Number.isFinite(big.zoom)).toBe(true);
     expect(big.zoom).toBeGreaterThan(0);
     expect(big.zoom).toBeLessThan(small.zoom);
     expect(big).toMatchObject({ x: 1600, y: 800 });

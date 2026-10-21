@@ -8,7 +8,7 @@ export type Spot = {
   workoutStyle?: "run" | "lift" | "bike" | "box" | "row" | "stretch";
 };
 
-export type ZoneKind = "project" | "center" | "leisure";
+export type ZoneKind = "project" | "center" | "leisure" | "waiting";
 
 /** Retângulo no canvas (px) que vira piso, placa e paredes da sala. */
 export type Zone = {
@@ -20,6 +20,8 @@ export type Zone = {
   w: number;
   h: number;
   lit: boolean;
+  /** Cor de identidade da sala (tapete), escolhida pelo id. */
+  accent?: string;
   /** Ponto logo do lado de fora da porta (por onde se entra). */
   door: { x: number; y: number };
 };
@@ -28,7 +30,10 @@ export type LeisureId = "academia" | "banheiros" | "refeitorio" | "descanso" | "
 
 /** O escritório: um andar com todas as salas de projeto, a sala do Friol e o lazer. */
 export type Layout = {
+  /** O que a cena desenha. */
   furniture: FurnitureItem[];
+  /** O que bloqueia passagem: cada móvel sobre o retângulo em que aparece (ver modelBounds.ts). */
+  navFurniture: FurnitureItem[];
   bounds: { minX: number; minY: number; maxX: number; maxY: number };
   zones: Zone[];
   /** Lugares de trabalho por sala de projeto (id da sala do adaptador). */

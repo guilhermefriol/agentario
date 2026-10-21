@@ -9,14 +9,18 @@ import {
   OfficeFlagPole,
   RussiaFlagArt,
 } from "@/features/retro-office/scene/environment";
+import { CELL } from "@/features/tv/layout/rooms";
 import type { Layout, Zone } from "@/features/tv/layout/types";
 import { sceneSafeText } from "@/features/tv/sceneText";
 
-const FLOOR_LIT = "#e9dcc4";
+// Tons quentes nas salas de trabalho e frios nas de descanso (dicas de decoração de escritório).
+const FLOOR_LIT = "#efe1c8";
 const FLOOR_DARK = "#2a2622";
-const FLOOR_LEISURE = "#d9e4d0";
+const FLOOR_LEISURE = "#d3e3e8";
+const FLOOR_WAITING = "#dde3ea";
 const FLOOR_CENTER = "#f1d98a";
 const GROUND = "#1d1b19";
+const SUN = "#f5c542";
 
 /** Retângulo do canvas → centro e tamanho no mundo. */
 const worldRect = (zone: Pick<Zone, "x" | "y" | "w" | "h">) => {
@@ -25,7 +29,48 @@ const worldRect = (zone: Pick<Zone, "x" | "y" | "w" | "h">) => {
 };
 
 const zoneColor = (zone: Zone) =>
-  zone.kind === "center" ? FLOOR_CENTER : zone.kind === "leisure" ? FLOOR_LEISURE : zone.lit ? FLOOR_LIT : FLOOR_DARK;
+  zone.kind === "center"
+    ? FLOOR_CENTER
+    : zone.kind === "leisure"
+      ? FLOOR_LEISURE
+      : zone.kind === "waiting"
+        ? FLOOR_WAITING
+        : zone.lit
+          ? FLOOR_LIT
+          : FLOOR_DARK;
+
+/** Tapete na cor de identidade da sala, sob as mesas (mais apagado com a sala escura). */
+function Rug({ zone }: { zone: Zone }) {
+  if (zone.kind !== "project" || !zone.accent) return null;
+  const rug = { x: zone.x + CELL, y: zone.y + CELL + CELL / 2, w: zone.w - 2 * CELL, h: zone.h - 3 * CELL };
+  const { cx, cz, w, h } = worldRect(rug);
+  return (
+    <mesh position={[cx, 0.005, cz]} rotation={[-Math.PI / 2, 0, 0]} receiveShadow>
+      <planeGeometry args={[w, h]} />
+      <meshStandardMaterial color={zone.accent} roughness={1} transparent opacity={zone.lit ? 0.75 : 0.22} />
+    </mesh>
+  );
+}
+
+/** "Sol" no chão da sala do Friol: o centro do universo. */
+function Sun({ zone }: { zone: Zone }) {
+  const [x, , z] = toWorld(zone.x + zone.w / 2, zone.y + zone.h / 2);
+  const rays = Array.from({ length: 16 }, (_, i) => (i / 16) * Math.PI * 2);
+  return (
+    <group position={[x, 0.006, z]} rotation={[-Math.PI / 2, 0, 0]}>
+      <mesh>
+        <circleGeometry args={[0.9, 48]} />
+        <meshStandardMaterial color={SUN} emissive={SUN} emissiveIntensity={0.35} roughness={0.6} />
+      </mesh>
+      {rays.map((angle, i) => (
+        <mesh key={`raio-${i}`} position={[Math.cos(angle) * 1.45, Math.sin(angle) * 1.45, 0]} rotation={[0, 0, angle]}>
+          <planeGeometry args={[i % 2 === 0 ? 0.9 : 0.55, 0.12]} />
+          <meshStandardMaterial color={SUN} emissive={SUN} emissiveIntensity={0.25} roughness={0.6} />
+        </mesh>
+      ))}
+    </group>
+  );
+}
 
 function ZoneFloor({ zone }: { zone: Zone }) {
   const { cx, cz, w, h } = worldRect(zone);
@@ -171,6 +216,14 @@ export const TvEnvironment = memo(function TvEnvironment({ layout }: { layout: L
       {zones.map((zone) => (
         <ZoneFloor key={`floor-${zone.id}`} zone={zone} />
       ))}
+      {zones.map((zone) => (
+        <Rug key={`rug-${zone.id}`} zone={zone} />
+      ))}
+      {zones
+        .filter((zone) => zone.kind === "center")
+        .map((zone) => (
+          <Sun key="sol" zone={zone} />
+        ))}
       {zones.map((zone) => (
         <ZoneLabel key={`label-${zone.id}`} zone={zone} />
       ))}

@@ -1,14 +1,13 @@
 import { WALL_THICKNESS } from "@/features/retro-office/core/constants";
 import { getGymWorkoutLocations } from "@/features/retro-office/core/navigation";
 import type { FurnitureItem } from "@/features/retro-office/core/types";
+import { placeByVisualCenter } from "@/features/tv/layout/modelBounds";
 import type { LeisureId, Spot, Zone } from "@/features/tv/layout/types";
 
 /** Tudo é alinhado à grade de navegação (células de 25 px). */
 export const CELL = 25;
 export const DOOR_GAP = 4 * CELL;
-export const DESK_W = 100;
 // Mesa (4 células) + corredor (2 células): sempre há passagem entre as mesas.
-const DESK_STEP_X = 6 * CELL;
 
 export const LEISURE_W = 10 * CELL;
 export const LEISURE_H = 12 * CELL;
@@ -64,43 +63,75 @@ export function roomWalls(
 export const doorCenterX = (zone: Pick<Zone, "x" | "w">) =>
   zone.x + Math.floor((zone.w / 2 - DOOR_GAP / 2) / CELL) * CELL + DOOR_GAP / 2;
 
-/** Sala de projeto fechada com uma fileira de `cols` mesas. */
-export const projectRoomSize = (cols: number) => ({
-  w: 2 * CELL + cols * DESK_STEP_X,
-  h: 8 * CELL,
+/** Largura de uma unidade da grade de salas e o passo entre unidades. */
+export const UNIT_W = 14 * CELL;
+export const UNIT_STEP = UNIT_W + CELL;
+export const ROOM_H = 8 * CELL;
+const DESK_STEP = 4 * CELL;
+
+/** Sala de projeto fechada com 1 ou 2 unidades de largura (3 ou 6 mesas). */
+export const projectRoomSize = (units: 1 | 2) => ({
+  w: units === 1 ? UNIT_W : UNIT_W + UNIT_STEP,
+  h: ROOM_H,
 });
+export const desksFor = (units: 1 | 2) => (units === 1 ? 3 : 6);
+
+// Paleta suave de identidade das salas (tapete): azuis, verdes e tons terrosos.
+const ACCENTS = ["#7aa6c2", "#8fb996", "#c9a27e", "#a7a3c9", "#d4b483", "#86b3ad", "#c98f8f", "#9bb0c9"];
+export const accentFor = (id: string) => {
+  let h = 0;
+  for (let i = 0; i < id.length; i += 1) h = (h * 31 + id.charCodeAt(i)) >>> 0;
+  return ACCENTS[h % ACCENTS.length];
+};
 
 /**
- * Mesas e lugares de uma sala de projeto. Cada lugar fica na célula logo acima da mesa,
- * olhando para ela; quem passar do número de mesas fica de pé na fileira de cima.
+ * Postos de trabalho de uma sala de projeto, montados sobre onde os modelos 3D aparecem
+ * (ver modelBounds.ts): a mesa fica nas fileiras 1–2, encostada na parede de cima; a cadeira
+ * (virada para a mesa) logo abaixo, na fileira 3; a pessoa senta na cadeira olhando o monitor.
+ * Fileiras: parede (0), mesas (1–2), cadeiras/lugares (3), passagem (4), em pé (5),
+ * corredor até a porta (6), parede (7). Mesas a cada 4 colunas, com corredor entre elas.
+ * Lotação = mesas + lugares de pé da fileira 5; quem passar disso vai para a Área de espera.
  */
 export function projectRoomContents(
   zone: Zone,
-  cols: number,
+  desks: number,
   seatsNeeded: number,
   make: (item: Item) => FurnitureItem,
-): { furniture: FurnitureItem[]; seats: Spot[]; fiscal: Spot } {
-  // Parede (0), lugares (1–2), mesas (3–5), corredor até a porta (6), parede (7).
-  const deskRow = 3;
+): { furniture: FurnitureItem[]; seats: Spot[]; fiscal: Spot; capacity: number } {
+  const top = zone.y;
   const furniture: FurnitureItem[] = [];
   const seats: Spot[] = [];
-  for (let col = 0; col < cols; col += 1) {
-    const dx = zone.x + 2 * CELL + col * DESK_STEP_X;
-    furniture.push(make({ type: "desk_cubicle", x: dx, y: zone.y + deskRow * CELL }));
-    seats.push({ ...cell(zone, 4 + col * 6, deskRow - 1), facing: 0, pose: "sit" });
+  for (let col = 0; col < desks; col += 1) {
+    // +1 px: o desenho da mesa começa 0,8 px antes do canto; assim ocupa só 3 colunas.
+    const dx = zone.x + 2 * CELL + col * DESK_STEP + 1;
+    const seat: Spot = { x: dx + 30, y: top + 3 * CELL + CELL / 2, facing: Math.PI, pose: "sit" };
+    furniture.push(
+      make({ type: "desk_cubicle", x: dx, y: top + 62 }),
+      make({ type: "computer", x: dx + 18, y: top + 48 }),
+      make({ type: "keyboard", x: dx + 15, y: top + 49 }),
+      make({ type: "mouse", x: dx + 47, y: top + 52 }),
+      make({ type: "chair", ...placeByVisualCenter("chair", seat.x, seat.y, 180), facing: 180 }),
+      make({ type: "trash", x: dx + 58, y: top + 70 }),
+    );
+    seats.push(seat);
   }
-  const standRow = deskRow - 2;
-  const standCols = Math.max(1, zone.w / CELL - 2);
-  for (let extra = seats.length; extra < seatsNeeded; extra += 1) {
-    const i = extra - cols;
-    seats.push({
-      ...cell(zone, 1 + (i % standCols), Math.max(1, standRow - Math.floor(i / standCols))),
-      facing: 0,
-      pose: "stand",
-    });
+  // Decoração base (dicas de escritório): luz quente, planta no canto, relógio e armário na parede.
+  const cols = zone.w / CELL;
+  furniture.push(
+    make({ type: "lamp", x: zone.x + CELL + 6, y: zone.y + 5 * CELL + 14 }),
+    make({ type: "plant", x: zone.x + (cols - 2) * CELL + CELL / 2, y: zone.y + 5 * CELL + CELL / 2 }),
+    make({ type: "clock", x: zone.x + Math.floor(cols / 2) * CELL, y: zone.y + 4 }),
+  );
+  if (desks > 3) furniture.push(make({ type: "wall_cabinet", x: zone.x + 2 * CELL, y: zone.y + 6 }));
+
+  // Lugares de pé na fileira 5 (a planta ocupa o canto direito).
+  const standCols = Math.max(0, cols - 6);
+  const capacity = desks + standCols;
+  for (let i = 0; seats.length < Math.min(seatsNeeded, capacity); i += 1) {
+    seats.push({ ...cell(zone, 2 + i, 5), facing: Math.PI, pose: "stand" });
   }
-  const fiscal: Spot = { ...cell(zone, zone.w / CELL - 2, 1), facing: 0, pose: "stand" };
-  return { furniture, seats, fiscal };
+  const fiscal: Spot = { ...cell(zone, 1, 4), facing: Math.PI / 2, pose: "stand" };
+  return { furniture, seats, fiscal, capacity };
 }
 
 /** Facing para olhar de (x,y) até (tx,ty), no padrão da cena (atan2(dx, dy)). */
@@ -141,21 +172,34 @@ export function leisureContents(
       return { furniture, spots };
     }
     case "refeitorio": {
-      const table = at(3, 4);
-      const center = { x: table.x + 60, y: table.y + 60 };
-      const chairs: Spot[] = [cell(zone, 5, 2), cell(zone, 5, 10), cell(zone, 1, 6), cell(zone, 3, 10)].map(
-        (p) => ({ ...p, facing: lookAt(p.x, p.y, center.x, center.y), pose: "sit" }),
-      );
+      // Mesa redonda no meio (o desenho dela tem 123×142 px) e uma cadeira de cada lado,
+      // posicionadas pelo desenho; a pessoa senta na cadeira olhando para a mesa.
+      const tableCenter = { x: x + zone.w / 2, y: y + 6 * CELL + CELL / 2 };
+      const tablePos = placeByVisualCenter("round_table", tableCenter.x, tableCenter.y);
+      const seatPoints = [
+        { x: tableCenter.x, y: y + CELL + CELL / 2 },
+        { x: tableCenter.x, y: y + 10 * CELL + CELL / 2 },
+        { x: x + CELL + CELL / 2, y: tableCenter.y },
+        { x: x + zone.w - CELL - CELL / 2, y: tableCenter.y },
+      ];
+      const chairs: Spot[] = seatPoints.map((p) => ({
+        ...p,
+        facing: lookAt(p.x, p.y, tableCenter.x, tableCenter.y),
+        pose: "sit",
+      }));
       const furniture = [
-        make({ type: "round_table", ...table }),
-        ...chairs.map((p) => make({ type: "chair", x: p.x - 12, y: p.y - 12, facing: 0 })),
+        make({ type: "round_table", ...tablePos }),
+        ...chairs.map((p) => {
+          const facing = Math.round((p.facing * 180) / Math.PI);
+          return make({ type: "chair", ...placeByVisualCenter("chair", p.x, p.y, facing), facing });
+        }),
         make({ type: "coffee_machine", ...at(8, 1) }),
       ];
       const counter: Spot[] = [
         { ...cell(zone, 7, 2), facing: Math.PI / 2, pose: "stand" },
         { ...cell(zone, 2, 2), facing: 0, pose: "stand" },
         { ...cell(zone, 7, 10), facing: Math.PI, pose: "stand" },
-        { ...cell(zone, 1, 9), facing: Math.PI, pose: "stand" },
+        { ...cell(zone, 2, 10), facing: Math.PI, pose: "stand" },
       ];
       return { furniture, spots: [...chairs, ...counter] };
     }
@@ -195,13 +239,29 @@ export function leisureContents(
   }
 }
 
-/** Sala do Friol (centro, 10 × 12 células): mesa grande, visitas, lugares de pé e do Fiscal. Porta no topo. */
+/** Sala do Friol (centro): mesa grande no meio, visitas, lugares de pé e do Fiscal. Porta no topo. */
 export function centerContents(zone: Zone, make: (item: Item) => FurnitureItem) {
+  const cols = Math.round(zone.w / CELL);
+  const mid = Math.floor(cols / 2);
   // Mesa grande no meio; corredor livre na coluna 1 até a cadeira do Friol, atrás da mesa.
-  const furniture = [make({ type: "executive_desk", x: zone.x + 3 * CELL - 2, y: zone.y + 5 * CELL })];
-  const friol: Spot = { ...cell(zone, 5, 9), facing: Math.PI, pose: "sit" };
-  const visits: Spot[] = [3, 4, 6, 7].map((c) => ({ ...cell(zone, c, 3), facing: 0, pose: "stand" }));
+  const furniture = [
+    make({ type: "executive_desk", x: zone.x + zone.w / 2 - 65, y: zone.y + 5 * CELL }),
+    make({ type: "lamp", x: zone.x + (cols - 2) * CELL + 2, y: zone.y + 10 * CELL }),
+  ];
+  const friol: Spot = { ...cell(zone, mid, 9), facing: Math.PI, pose: "sit" };
+  const visits: Spot[] = [mid - 2, mid - 1, mid + 1, mid + 2].map((c) => ({ ...cell(zone, c, 3), facing: 0, pose: "stand" }));
   const stand: Spot[] = [2, 3, 4, 5, 6, 7].map((r) => ({ ...cell(zone, 1, r), facing: Math.PI / 2, pose: "stand" }));
-  const fiscal: Spot = { ...cell(zone, 8, 2), facing: -Math.PI / 2, pose: "stand" };
+  const fiscal: Spot = { ...cell(zone, cols - 2, 2), facing: -Math.PI / 2, pose: "stand" };
   return { furniture, friol, visits, stand, fiscal };
+}
+
+/** Lugares da Área de espera: uma célula por pessoa, em fileiras (porta no topo). */
+export function waitingContents(zone: Zone, count: number): Spot[] {
+  const cols = Math.round(zone.w / CELL) - 2;
+  const rows = Math.round(zone.h / CELL) - 3;
+  const spots: Spot[] = [];
+  for (let i = 0; i < Math.min(count, cols * rows); i += 1) {
+    spots.push({ ...cell(zone, 1 + (i % cols), 2 + Math.floor(i / cols)), facing: 0, pose: "stand" });
+  }
+  return spots;
 }
